@@ -45,14 +45,6 @@ int32_t tls_client_hello(char *send_data, char *sni)
     return sizeof(tls_data_t) + sni_len;
 }
 
-void print_help(void)
-{
-    printf("Commands:\n"
-           "-domains_file /example.txt    Domains file path\n"
-           "-ips_file /example.txt        IPs file path\n");
-    exit(EXIT_FAILURE);
-}
-
 int32_t in_subnet(uint32_t ip, char *subnet_in)
 {
     char subnet[100];
@@ -83,9 +75,18 @@ int32_t in_subnet(uint32_t ip, char *subnet_in)
     }
 }
 
+void print_help(void)
+{
+    printf("\nCommands:\n"
+           "  Required parameters:\n"
+           "    -domains_file /example.txt    Domains file path\n"
+           "    -ips_file /example.txt        IPs file path\n");
+    exit(EXIT_FAILURE);
+}
+
 int32_t main(int32_t argc, char *argv[])
 {
-    printf("\nDomains block test started\n");
+    printf("\nDomains block test started\n\n");
 
     int32_t is_domains_file_path = 0;
     char domains_file_path[PATH_MAX];
@@ -118,16 +119,19 @@ int32_t main(int32_t argc, char *argv[])
                 }
                 continue;
             }
+            printf("Error:\n");
             printf("Unknown command %s\n", argv[i]);
             print_help();
         }
 
         if (!is_domains_file_path) {
+            printf("Error:\n");
             printf("Programm need domains file path\n");
             print_help();
         }
 
         if (is_IPs_file_path == 0) {
+            printf("Error:\n");
             printf("Programm need IPs file path\n");
             print_help();
         }
