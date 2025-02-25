@@ -1,5 +1,18 @@
 #include "domains-block-test.h"
 
+void errmsg(const char *format, ...)
+{
+    va_list args;
+
+    printf("Error: ");
+
+    va_start(args, format);
+    vprintf(format, args);
+    va_end(args);
+
+    exit(EXIT_FAILURE);
+}
+
 int32_t tls_client_hello(char *send_data, char *sni)
 {
     int32_t sni_len = strlen(sni);
@@ -68,77 +81,66 @@ int32_t in_subnet(uint32_t ip, char *subnet_in)
     uint32_t netip = ntohl(subnet_ip);
     uint32_t netmask = (0xFFFFFFFF << (32 - subnet_prefix) & 0xFFFFFFFF);
 
-    if ((netip & netmask) == (ip_h & netmask)) {
-        return 1;
-    } else {
-        return 0;
-    }
+    return ((netip & netmask) == (ip_h & netmask));
 }
 
 void print_help(void)
 {
-    printf("\nCommands:\n"
+    printf("Commands:\n"
            "  Required parameters:\n"
-           "    -domains_file /example.txt    Domains file path\n"
-           "    -ips_file /example.txt        IPs file path\n");
-    exit(EXIT_FAILURE);
+           "    -f  \"/example.txt\"  Domains file path\n"
+           "    -i  \"/example.txt\"  IPs file path\n");
 }
 
 int32_t main(int32_t argc, char *argv[])
 {
-    printf("\nDomains block test started\n\n");
+    printf("Domains block test started\n");
+    printf("Launch parameters:\n");
 
-    int32_t is_domains_file_path = 0;
     char domains_file_path[PATH_MAX];
+    memset(domains_file_path, 0, PATH_MAX);
 
-    int32_t is_IPs_file_path = 0;
     char IPs_file_path[PATH_MAX];
+    memset(IPs_file_path, 0, PATH_MAX);
 
     //Args
     {
         for (int32_t i = 1; i < argc; i++) {
-            if (!strcmp(argv[i], "-domains_file")) {
+            if (!strcmp(argv[i], "-f")) {
                 if (i != argc - 1) {
                     printf("Get domains from file %s\n", argv[i + 1]);
                     if (strlen(argv[i + 1]) < PATH_MAX) {
-                        is_domains_file_path = 1;
                         strcpy(domains_file_path, argv[i + 1]);
                     }
                     i++;
                 }
                 continue;
             }
-            if (!strcmp(argv[i], "-ips_file")) {
+            if (!strcmp(argv[i], "-i")) {
                 if (i != argc - 1) {
                     printf("Get IPs from file %s\n", argv[i + 1]);
                     if (strlen(argv[i + 1]) < PATH_MAX) {
-                        is_IPs_file_path = 1;
                         strcpy(IPs_file_path, argv[i + 1]);
                     }
                     i++;
                 }
                 continue;
             }
-            printf("Error:\n");
-            printf("Unknown command %s\n", argv[i]);
             print_help();
+            errmsg("Unknown command %s\n", argv[i]);
         }
 
-        if (!is_domains_file_path) {
-            printf("Error:\n");
-            printf("Programm need domains file path\n");
+        if (domains_file_path[0]) {
             print_help();
+            errmsg("Programm need domains file path\n");
         }
 
-        if (is_IPs_file_path == 0) {
-            printf("Error:\n");
-            printf("Programm need IPs file path\n");
+        if (IPs_file_path[0]) {
             print_help();
+            errmsg("Programm need IPs file path\n");
         }
     }
     //Args
-
-    printf("\n");
 
     char **domains = NULL;
     int32_t domains_count = 0;
@@ -147,8 +149,7 @@ int32_t main(int32_t argc, char *argv[])
     {
         FILE *domains_fp = fopen(domains_file_path, "r");
         if (!domains_fp) {
-            printf("Error opening file %s\n", domains_file_path);
-            exit(EXIT_FAILURE);
+            errmsg("Error opening file %s\n", domains_file_path);
         }
 
         fseek(domains_fp, 0, SEEK_END);
@@ -159,8 +160,7 @@ int32_t main(int32_t argc, char *argv[])
 
         if (fread(domains_file_data, sizeof(char), domains_file_size_add, domains_fp) !=
             (size_t)domains_file_size_add) {
-            printf("Can't read domains file %s\n", domains_file_path);
-            exit(EXIT_FAILURE);
+            errmsg("Can't read domains file %s\n", domains_file_path);
         }
 
         for (int32_t i = 0; i < (int32_t)domains_file_size_add; i++) {
@@ -188,8 +188,7 @@ int32_t main(int32_t argc, char *argv[])
     {
         FILE *IPs_fp = fopen(IPs_file_path, "r");
         if (!IPs_fp) {
-            printf("Error opening file %s\n", IPs_file_path);
-            exit(EXIT_FAILURE);
+            errmsg("Error opening file %s\n", IPs_file_path);
         }
 
         fseek(IPs_fp, 0, SEEK_END);
@@ -200,8 +199,7 @@ int32_t main(int32_t argc, char *argv[])
 
         if (fread(IPs_file_data, sizeof(char), IPs_file_size_add, IPs_fp) !=
             (size_t)IPs_file_size_add) {
-            printf("Can't read IPs file %s\n", IPs_file_path);
-            exit(EXIT_FAILURE);
+            errmsg("Can't read IPs file %s\n", IPs_file_path);
         }
 
         for (int32_t i = 0; i < (int32_t)IPs_file_size_add; i++) {
@@ -447,8 +445,7 @@ int32_t main(int32_t argc, char *argv[])
 
     FILE *blocked_fp = fopen("blocked.txt", "w");
     if (!blocked_fp) {
-        printf("Error opening file blocked.txt\n");
-        return 0;
+        errmsg("Error opening file blocked.txt\n");
     }
 
     for (int32_t i = 0; i < domains_count; i++) {
@@ -457,5 +454,5 @@ int32_t main(int32_t argc, char *argv[])
         }
     }
 
-    return 0;
+    return EXIT_SUCCESS;
 }

@@ -1,13 +1,18 @@
-#include <linux/limits.h>
 #include <arpa/inet.h>
-#include <netdb.h>
+#include <errno.h>
+#include <limits.h>
+#include <net/if.h>
+#include <net/route.h>
+#include <pthread.h>
+#include <signal.h>
+#include <stdarg.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <netinet/tcp.h>
+#include <sys/ioctl.h>
 #include <unistd.h>
-#include <errno.h>
 #include <poll.h>
 
 #define PORT_TLS 443
