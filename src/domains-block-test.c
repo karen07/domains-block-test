@@ -149,7 +149,7 @@ int32_t main(int32_t argc, char *argv[])
     {
         FILE *domains_fp = fopen(domains_file_path, "r");
         if (!domains_fp) {
-            errmsg("Error opening file %s\n", domains_file_path);
+            errmsg("Can't open file %s\n", domains_file_path);
         }
 
         fseek(domains_fp, 0, SEEK_END);
@@ -188,7 +188,7 @@ int32_t main(int32_t argc, char *argv[])
     {
         FILE *IPs_fp = fopen(IPs_file_path, "r");
         if (!IPs_fp) {
-            errmsg("Error opening file %s\n", IPs_file_path);
+            errmsg("Can't open file %s\n", IPs_file_path);
         }
 
         fseek(IPs_fp, 0, SEEK_END);
@@ -445,7 +445,7 @@ int32_t main(int32_t argc, char *argv[])
 
     FILE *blocked_fp = fopen("blocked.txt", "w");
     if (!blocked_fp) {
-        errmsg("Error opening file blocked.txt\n");
+        errmsg("Can't open file blocked.txt\n");
     }
 
     for (int32_t i = 0; i < domains_count; i++) {
