@@ -130,12 +130,12 @@ int32_t main(int32_t argc, char *argv[])
             errmsg("Unknown command %s\n", argv[i]);
         }
 
-        if (domains_file_path[0]) {
+        if (domains_file_path[0] == 0) {
             print_help();
             errmsg("Programm need domains file path\n");
         }
 
-        if (IPs_file_path[0]) {
+        if (IPs_file_path[0] == 0) {
             print_help();
             errmsg("Programm need IPs file path\n");
         }
