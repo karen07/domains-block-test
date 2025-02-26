@@ -1,5 +1,8 @@
 #include "domains-block-test.h"
 
+uint32_t tun_ip = INADDR_NONE;
+uint32_t tun_prefix;
+
 void errmsg(const char *format, ...)
 {
     va_list args;
@@ -89,7 +92,70 @@ void print_help(void)
     printf("Commands:\n"
            "  Required parameters:\n"
            "    -f  \"/example.txt\"  Domains file path\n"
-           "    -i  \"/example.txt\"  IPs file path\n");
+           "    -i  \"/example.txt\"  IPs file path\n"
+           "    -n  \"x.x.x.x/xx\"    TUN net\n");
+}
+
+int32_t tun_alloc(char *dev, int32_t flags)
+{
+    struct ifreq ifr;
+    int32_t fd_create;
+    int32_t fd_setip;
+    int32_t err;
+    struct sockaddr_in sin;
+
+    if ((fd_create = open("/dev/net/tun", O_RDWR)) < 0) {
+        return fd_create;
+    }
+
+    memset(&ifr, 0, sizeof(ifr));
+    ifr.ifr_flags = flags;
+    strncpy(ifr.ifr_name, dev, IFNAMSIZ);
+
+    if ((err = ioctl(fd_create, TUNSETIFF, (void *)&ifr)) < 0) {
+        return err;
+    }
+
+    if ((fd_setip = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        return fd_setip;
+    }
+
+    memset(&ifr, 0, sizeof(ifr));
+    strncpy(ifr.ifr_name, dev, IFNAMSIZ);
+
+    if ((err = ioctl(fd_setip, SIOCGIFFLAGS, &ifr)) < 0) {
+        return err;
+    }
+
+    if (!(ifr.ifr_flags & IFF_UP)) {
+        ifr.ifr_flags |= IFF_UP;
+        if ((err = ioctl(fd_setip, SIOCSIFFLAGS, &ifr)) < 0) {
+            return err;
+        }
+    }
+
+    memset(&sin, 0, sizeof(struct sockaddr_in));
+    sin.sin_family = AF_INET;
+    sin.sin_addr.s_addr = tun_ip;
+    memcpy(&ifr.ifr_addr, &sin, sizeof(struct sockaddr));
+
+    if ((err = ioctl(fd_setip, SIOCSIFADDR, &ifr)) < 0) {
+        return err;
+    }
+
+    memset(&ifr, 0, sizeof(ifr));
+    strncpy(ifr.ifr_name, dev, IFNAMSIZ);
+
+    memset(&sin, 0, sizeof(struct sockaddr_in));
+    sin.sin_family = AF_INET;
+    sin.sin_addr.s_addr = htonl(INADDR_NONE << (32 - tun_prefix) & INADDR_NONE);
+    memcpy(&ifr.ifr_netmask, &sin, sizeof(struct sockaddr));
+
+    if ((err = ioctl(fd_setip, SIOCSIFNETMASK, &ifr)) < 0) {
+        return err;
+    }
+
+    return fd_create;
 }
 
 int32_t main(int32_t argc, char *argv[])
@@ -108,7 +174,7 @@ int32_t main(int32_t argc, char *argv[])
         for (int32_t i = 1; i < argc; i++) {
             if (!strcmp(argv[i], "-f")) {
                 if (i != argc - 1) {
-                    printf("Get domains from file %s\n", argv[i + 1]);
+                    printf("  Domains  \"%s\"\n", argv[i + 1]);
                     if (strlen(argv[i + 1]) < PATH_MAX) {
                         strcpy(domains_file_path, argv[i + 1]);
                     }
@@ -118,9 +184,25 @@ int32_t main(int32_t argc, char *argv[])
             }
             if (!strcmp(argv[i], "-i")) {
                 if (i != argc - 1) {
-                    printf("Get IPs from file %s\n", argv[i + 1]);
+                    printf("  IPs      \"%s\"\n", argv[i + 1]);
                     if (strlen(argv[i + 1]) < PATH_MAX) {
                         strcpy(IPs_file_path, argv[i + 1]);
+                    }
+                    i++;
+                }
+                continue;
+            }
+            if (!strcmp(argv[i], "-n")) {
+                if (i != argc - 1) {
+                    printf("  TUN      \"%s\"\n", argv[i + 1]);
+                    char *slash_ptr = strchr(argv[i + 1], '/');
+                    if (slash_ptr) {
+                        sscanf(slash_ptr + 1, "%u", &tun_prefix);
+                        *slash_ptr = 0;
+                        if (strlen(argv[i + 1]) < INET_ADDRSTRLEN) {
+                            tun_ip = inet_addr(argv[i + 1]);
+                        }
+                        *slash_ptr = '/';
                     }
                     i++;
                 }
@@ -139,8 +221,29 @@ int32_t main(int32_t argc, char *argv[])
             print_help();
             errmsg("Programm need IPs file path\n");
         }
+
+        if (tun_ip == INADDR_NONE) {
+            print_help();
+            errmsg("The program need correct TUN IP\n");
+        }
+
+        if (tun_prefix == 0) {
+            print_help();
+            errmsg("The program need correct TUN prefix\n");
+        }
+
+        if (tun_prefix > 24) {
+            print_help();
+            errmsg("The program need TUN net prefix 1 - 24\n");
+        }
     }
     //Args
+
+    int32_t tun_fd = 0;
+    tun_fd = tun_alloc("Domains_Check", IFF_TUN);
+    if (tun_fd < 0) {
+        errmsg("Can't allocate TUN interface\n");
+    }
 
     char **domains = NULL;
     int32_t domains_count = 0;
@@ -222,17 +325,19 @@ int32_t main(int32_t argc, char *argv[])
     //IPs read
 
     printf("Domains count: %d\n", domains_count);
-    printf("IPs count: %d\n", IPs_count);
+    printf("IPs count    : %d\n", IPs_count);
 
     int32_t *domains_status = (int32_t *)malloc(domains_count * sizeof(int32_t));
     memset(domains_status, 0, domains_count * sizeof(int32_t));
 
+    /*
     struct pollfd *pollfd = (struct pollfd *)malloc(MAX_SOCKET_COUNT * sizeof(struct pollfd));
     char *send_data = (char *)malloc(MAX_SOCKET_COUNT * PACKET_MAX_SIZE);
     char *read_data = (char *)malloc(PACKET_MAX_SIZE);
     char *ready_to_write = (char *)malloc(MAX_SOCKET_COUNT);
     int32_t *sock_to_domain = (int32_t *)malloc(MAX_SOCKET_COUNT * sizeof(int32_t));
     int32_t *sock_to_ip = (int32_t *)malloc(MAX_SOCKET_COUNT * sizeof(int32_t));
+    */
 
     for (int32_t k = 0; k < TRY_COUNT; k++) {
         int32_t domain_index = 0;
@@ -240,6 +345,7 @@ int32_t main(int32_t argc, char *argv[])
         printf("\nTry %d\n", k);
 
         while (domain_index < domains_count) {
+            /*
             for (int32_t i = 0; i < MAX_SOCKET_COUNT; i++) {
                 pollfd[i].fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
             }
@@ -440,6 +546,7 @@ int32_t main(int32_t argc, char *argv[])
             printf("pollin_err %d ", pollin_err);
             printf("\n");
             //Stat
+            */
         }
     }
 
