@@ -449,9 +449,7 @@ int32_t main(int32_t argc, char *argv[])
     }
 
     for (int32_t i = 0; i < domains_count; i++) {
-        if (domains_status[i] < 0) {
-            fprintf(blocked_fp, "%s\n", domains[i]);
-        }
+        fprintf(blocked_fp, "%d %s\n", domains_status[i], domains[i]);
     }
 
     return EXIT_SUCCESS;
