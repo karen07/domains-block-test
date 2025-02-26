@@ -158,6 +158,26 @@ int32_t tun_alloc(char *dev, int32_t flags)
     return fd_create;
 }
 
+static uint16_t checksum(char *buf, uint32_t size)
+{
+    uint32_t sum = 0, i;
+
+    for (i = 0; i < size - 1; i += 2) {
+        uint16_t word16 = *(uint16_t *)&buf[i];
+        sum += word16;
+    }
+
+    if (size & 1) {
+        uint16_t word16 = (uint8_t)buf[i];
+        sum += word16;
+    }
+
+    while (sum >> 16)
+        sum = (sum & 0xFFFF) + (sum >> 16);
+
+    return ~sum;
+}
+
 int32_t main(int32_t argc, char *argv[])
 {
     printf("Domains block test started\n");
@@ -240,7 +260,7 @@ int32_t main(int32_t argc, char *argv[])
     //Args
 
     int32_t tun_fd = 0;
-    tun_fd = tun_alloc("Domains_Check", IFF_TUN);
+    tun_fd = tun_alloc("Domains_Check", IFF_TUN | IFF_NO_PI);
     if (tun_fd < 0) {
         errmsg("Can't allocate TUN interface\n");
     }
@@ -339,12 +359,76 @@ int32_t main(int32_t argc, char *argv[])
     int32_t *sock_to_ip = (int32_t *)malloc(MAX_SOCKET_COUNT * sizeof(int32_t));
     */
 
+    char data[sizeof(struct iphdr) + sizeof(struct tcphdr)];
+
     for (int32_t k = 0; k < TRY_COUNT; k++) {
         int32_t domain_index = 0;
 
         printf("\nTry %d\n", k);
 
+        uint16_t port = 1000;
+
         while (domain_index < domains_count) {
+            int32_t current_ips_num = 0;
+            int32_t ret = 0;
+            do {
+                current_ips_num = rand() % IPs_count;
+                ret = 0;
+                ret += in_subnet(IPs[current_ips_num], "10.0.0.0/8");
+                ret += in_subnet(IPs[current_ips_num], "172.16.0.0/12");
+                ret += in_subnet(IPs[current_ips_num], "192.168.0.0/16");
+                ret += in_subnet(IPs[current_ips_num], "100.64.0.0/10");
+                ret += in_subnet(IPs[current_ips_num], "0.0.0.0/8");
+            } while (ret > 0);
+
+            struct iphdr *iph = (struct iphdr *)data;
+            iph->version = 4;
+            iph->ihl = 5;
+            iph->tos = 0;
+            iph->tot_len = htons(40);
+            iph->id = 0;
+            iph->frag_off = htons(0x4000);
+            iph->ttl = 128;
+            iph->protocol = IPPROTO_TCP;
+            iph->check = 0;
+            iph->saddr = htonl(ntohl(tun_ip) + 3);
+            iph->daddr = IPs[current_ips_num];
+
+            struct tcphdr *tcph = (struct tcphdr *)(data + sizeof(struct iphdr));
+            tcph->source = htons(port++);
+            tcph->dest = htons(443);
+            tcph->seq = rand();
+            tcph->ack_seq = 0;
+            tcph->res1 = 0;
+            tcph->doff = 5;
+            tcph->syn = 1;
+            tcph->window = 0xffff;
+            tcph->check = 0;
+            tcph->urg_ptr = 0;
+
+            uint16_t L4_len = ntohs(iph->tot_len) - (iph->ihl << 2);
+
+            pseudo_header_t psh;
+            psh.source_address = iph->saddr;
+            psh.dest_address = iph->daddr;
+            psh.protocol = htons(IPPROTO_TCP);
+            psh.length = htons(L4_len);
+
+            char pseudogram[PACKET_MAX_SIZE];
+
+            memcpy(pseudogram, (char *)&psh, sizeof(pseudo_header_t));
+            memcpy(pseudogram + sizeof(pseudo_header_t), data + sizeof(struct iphdr), L4_len);
+
+            int32_t psize = sizeof(pseudo_header_t) + L4_len;
+            uint16_t checksum_value = checksum(pseudogram, psize);
+
+            tcph->check = checksum_value;
+            iph->check = checksum(data, iph->ihl << 2);
+
+            write(tun_fd, data, sizeof(struct iphdr) + sizeof(struct tcphdr));
+
+            sleep(1);
+
             /*
             for (int32_t i = 0; i < MAX_SOCKET_COUNT; i++) {
                 pollfd[i].fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);

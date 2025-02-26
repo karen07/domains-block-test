@@ -56,3 +56,10 @@ typedef struct tls_data {
     uint8_t sni_type;
     uint16_t sni_length;
 } __attribute__((packed)) tls_data_t;
+
+typedef struct pseudo_header {
+    uint32_t source_address;
+    uint32_t dest_address;
+    uint16_t protocol;
+    uint16_t length;
+} __attribute__((packed)) pseudo_header_t;
