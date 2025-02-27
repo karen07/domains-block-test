@@ -250,14 +250,15 @@ void *read_TUN(__attribute__((unused)) void *arg)
 
 void *send_TUN(__attribute__((unused)) void *arg)
 {
-    char write_data[sizeof(struct iphdr) + sizeof(struct tcphdr)];
+#define MSS_SIZE 4
+    char write_data[sizeof(struct iphdr) + sizeof(struct tcphdr) + MSS_SIZE];
 
     uint16_t port = 5000;
 
     for (int32_t k = 0; k < TRY_COUNT; k++) {
         printf("\nTry %d\n", k);
 
-        while (sended < 1000) {
+        while (sended < 50000) {
             int32_t current_ips_num = 0;
             int32_t ret = 0;
             do {
@@ -272,15 +273,15 @@ void *send_TUN(__attribute__((unused)) void *arg)
 
             struct iphdr *iph = (struct iphdr *)write_data;
             iph->version = 4;
-            iph->ihl = 5;
+            iph->ihl = sizeof(struct iphdr) / 4;
             iph->tos = 0;
-            iph->tot_len = htons(40);
+            iph->tot_len = htons(sizeof(struct iphdr) + sizeof(struct tcphdr) + MSS_SIZE);
             iph->id = 0;
             iph->frag_off = htons(0x4000);
             iph->ttl = 128;
             iph->protocol = IPPROTO_TCP;
             iph->check = 0;
-            iph->saddr = htonl(ntohl(tun_ip) + 3);
+            iph->saddr = htonl(ntohl(tun_ip) + 100 + sended);
             iph->daddr = IPs[current_ips_num].IP;
 
             IPs[current_ips_num].status = 1;
@@ -291,32 +292,33 @@ void *send_TUN(__attribute__((unused)) void *arg)
             tcph->seq = rand();
             tcph->ack_seq = 0;
             tcph->res1 = 0;
-            tcph->doff = 5;
+            tcph->doff = (sizeof(struct tcphdr) + MSS_SIZE) / 4;
             tcph->syn = 1;
             tcph->window = 0xffff;
             tcph->check = 0;
             tcph->urg_ptr = 0;
 
-            uint16_t L4_len = ntohs(iph->tot_len) - (iph->ihl << 2);
+            char *tcp_opt_ptr = write_data + sizeof(struct iphdr) + sizeof(struct tcphdr);
+            tcp_opt_ptr[0] = 2;
+            tcp_opt_ptr[1] = 4;
+            tcp_opt_ptr[2] = 0x05;
+            tcp_opt_ptr[3] = 0x78;
 
+            uint16_t L4_len = ntohs(iph->tot_len) - (iph->ihl << 2);
             pseudo_header_t psh;
             psh.source_address = iph->saddr;
             psh.dest_address = iph->daddr;
             psh.protocol = htons(IPPROTO_TCP);
             psh.length = htons(L4_len);
-
             char pseudogram[PACKET_MAX_SIZE];
-
             memcpy(pseudogram, (char *)&psh, sizeof(pseudo_header_t));
             memcpy(pseudogram + sizeof(pseudo_header_t), write_data + sizeof(struct iphdr), L4_len);
-
             int32_t psize = sizeof(pseudo_header_t) + L4_len;
             uint16_t checksum_value = checksum(pseudogram, psize);
-
             tcph->check = checksum_value;
             iph->check = checksum(write_data, iph->ihl << 2);
 
-            write(tun_fd, write_data, sizeof(struct iphdr) + sizeof(struct tcphdr));
+            write(tun_fd, write_data, sizeof(struct iphdr) + sizeof(struct tcphdr) + MSS_SIZE);
 
             sended++;
 
