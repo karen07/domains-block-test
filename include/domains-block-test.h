@@ -23,7 +23,7 @@
 
 #define PORT_TLS 443
 #define PACKET_MAX_SIZE 1500
-#define TRY_COUNT 10
+#define TRY_COUNT 100
 #define EXIT_WAIT_SEC 5
 
 typedef struct tls_data {

@@ -321,13 +321,13 @@ void *read_TUN(__attribute__((unused)) void *arg)
                 IPs[res_elem].domain = domains_index;
                 domains_index++;
 
-                if (domains_index > domains_count) {
+                if (!(domains_index < domains_count)) {
                     domains_index = 0;
                     try_count++;
                     printf("TRY %d\n", try_count);
                 }
 
-                if (try_count > TRY_COUNT) {
+                if (!(try_count < TRY_COUNT)) {
                     keep_sending = 0;
                 }
 
@@ -617,6 +617,8 @@ int32_t main(int32_t argc, char *argv[])
 
             domain_start = strchr(domain_start, 0) + 1;
         }
+
+        fclose(domains_fp);
     }
     //Domains read
 
@@ -664,6 +666,8 @@ int32_t main(int32_t argc, char *argv[])
 
             IP_start = strchr(IP_start, 0) + 1;
         }
+
+        fclose(IPs_fp);
     }
     //IPs read
 
@@ -728,6 +732,8 @@ int32_t main(int32_t argc, char *argv[])
     for (int32_t i = 0; i < domains_count; i++) {
         fprintf(blocked_fp, "%d %s\n", domains[i].status, domains[i].domain);
     }
+
+    fclose(blocked_fp);
 
     return EXIT_SUCCESS;
 }
