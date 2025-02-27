@@ -181,10 +181,16 @@ static uint16_t checksum(char *buf, uint32_t size)
     return ~sum;
 }
 
+typedef struct conn_data {
+    uint32_t IP;
+    int32_t status;
+    int32_t domain;
+} conn_data_t;
+
 int32_t tun_fd = 0;
 char **domains = NULL;
 int32_t domains_count = 0;
-uint32_t *IPs = NULL;
+conn_data_t *IPs = NULL;
 int32_t IPs_count = 0;
 
 void *read_TUN(__attribute__((unused)) void *arg)
@@ -221,11 +227,11 @@ void *send_TUN(__attribute__((unused)) void *arg)
             do {
                 current_ips_num = rand() % IPs_count;
                 ret = 0;
-                ret += in_subnet(IPs[current_ips_num], "10.0.0.0/8");
-                ret += in_subnet(IPs[current_ips_num], "172.16.0.0/12");
-                ret += in_subnet(IPs[current_ips_num], "192.168.0.0/16");
-                ret += in_subnet(IPs[current_ips_num], "100.64.0.0/10");
-                ret += in_subnet(IPs[current_ips_num], "0.0.0.0/8");
+                ret += in_subnet(IPs[current_ips_num].IP, "10.0.0.0/8");
+                ret += in_subnet(IPs[current_ips_num].IP, "172.16.0.0/12");
+                ret += in_subnet(IPs[current_ips_num].IP, "192.168.0.0/16");
+                ret += in_subnet(IPs[current_ips_num].IP, "100.64.0.0/10");
+                ret += in_subnet(IPs[current_ips_num].IP, "0.0.0.0/8");
             } while (ret > 0);
 
             struct iphdr *iph = (struct iphdr *)write_data;
@@ -239,7 +245,7 @@ void *send_TUN(__attribute__((unused)) void *arg)
             iph->protocol = IPPROTO_TCP;
             iph->check = 0;
             iph->saddr = htonl(ntohl(tun_ip) + 3);
-            iph->daddr = IPs[current_ips_num];
+            iph->daddr = IPs[current_ips_num].IP;
 
             struct tcphdr *tcph = (struct tcphdr *)(write_data + sizeof(struct iphdr));
             tcph->source = htons(++port);
@@ -364,7 +370,7 @@ int32_t main(int32_t argc, char *argv[])
         errmsg("Can't allocate TUN interface\n");
     }
 
-    //domains read
+    //Domains read
     {
         FILE *domains_fp = fopen(domains_file_path, "r");
         if (!domains_fp) {
@@ -398,7 +404,7 @@ int32_t main(int32_t argc, char *argv[])
             domain_start = strchr(domain_start, 0) + 1;
         }
     }
-    //domains read
+    //Domains read
 
     //IPs read
     {
@@ -425,12 +431,12 @@ int32_t main(int32_t argc, char *argv[])
             }
         }
 
-        IPs = (uint32_t *)malloc(IPs_count * sizeof(uint32_t));
-        memset(IPs, 0, IPs_count * sizeof(uint32_t));
+        IPs = (conn_data_t *)malloc(IPs_count * sizeof(conn_data_t));
+        memset(IPs, 0, IPs_count * sizeof(conn_data_t));
 
         char *IP_start = IPs_file_data;
         for (int32_t i = 0; i < IPs_count; i++) {
-            IPs[i] = inet_addr(IP_start);
+            IPs[i].IP = inet_addr(IP_start);
 
             IP_start = strchr(IP_start, 0) + 1;
         }
@@ -442,13 +448,6 @@ int32_t main(int32_t argc, char *argv[])
 
     int32_t *domains_status = (int32_t *)malloc(domains_count * sizeof(int32_t));
     memset(domains_status, 0, domains_count * sizeof(int32_t));
-
-    struct pollfd *pollfd = (struct pollfd *)malloc(MAX_SOCKET_COUNT * sizeof(struct pollfd));
-    char *send_data = (char *)malloc(MAX_SOCKET_COUNT * PACKET_MAX_SIZE);
-    char *read_data = (char *)malloc(PACKET_MAX_SIZE);
-    char *ready_to_write = (char *)malloc(MAX_SOCKET_COUNT);
-    int32_t *sock_to_domain = (int32_t *)malloc(MAX_SOCKET_COUNT * sizeof(int32_t));
-    int32_t *sock_to_ip = (int32_t *)malloc(MAX_SOCKET_COUNT * sizeof(int32_t));
 
     pthread_t send_thread;
     if (pthread_create(&send_thread, NULL, send_TUN, NULL)) {
@@ -486,6 +485,13 @@ int32_t main(int32_t argc, char *argv[])
         readed_old = readed;
     }
 
+    struct pollfd *pollfd = (struct pollfd *)malloc(MAX_SOCKET_COUNT * sizeof(struct pollfd));
+    char *send_data = (char *)malloc(MAX_SOCKET_COUNT * PACKET_MAX_SIZE);
+    char *read_data = (char *)malloc(PACKET_MAX_SIZE);
+    char *ready_to_write = (char *)malloc(MAX_SOCKET_COUNT);
+    int32_t *sock_to_domain = (int32_t *)malloc(MAX_SOCKET_COUNT * sizeof(int32_t));
+    int32_t *sock_to_ip = (int32_t *)malloc(MAX_SOCKET_COUNT * sizeof(int32_t));
+
     for (int32_t k = 0; k < TRY_COUNT; k++) {
         int32_t domain_index = 0;
 
@@ -510,20 +516,20 @@ int32_t main(int32_t argc, char *argv[])
                     do {
                         current_ips_num = rand() % IPs_count;
                         ret = 0;
-                        ret += in_subnet(IPs[current_ips_num], "10.0.0.0/8");
-                        ret += in_subnet(IPs[current_ips_num], "172.16.0.0/12");
-                        ret += in_subnet(IPs[current_ips_num], "192.168.0.0/16");
-                        ret += in_subnet(IPs[current_ips_num], "100.64.0.0/10");
-                        ret += in_subnet(IPs[current_ips_num], "0.0.0.0/30");
+                        ret += in_subnet(IPs[current_ips_num].IP, "10.0.0.0/8");
+                        ret += in_subnet(IPs[current_ips_num].IP, "172.16.0.0/12");
+                        ret += in_subnet(IPs[current_ips_num].IP, "192.168.0.0/16");
+                        ret += in_subnet(IPs[current_ips_num].IP, "100.64.0.0/10");
+                        ret += in_subnet(IPs[current_ips_num].IP, "0.0.0.0/30");
                     } while (ret > 0);
 
                     struct sockaddr_in servaddr;
                     memset(&servaddr, 0, sizeof(servaddr));
                     servaddr.sin_family = AF_INET;
-                    servaddr.sin_addr.s_addr = IPs[current_ips_num];
+                    servaddr.sin_addr.s_addr = IPs[current_ips_num].IP;
                     servaddr.sin_port = htons(PORT_TLS);
 
-                    sock_to_ip[i] = IPs[current_ips_num];
+                    sock_to_ip[i] = IPs[current_ips_num].IP;
 
                     if (connect(pollfd[i].fd, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
                         if (errno != EINPROGRESS) {
