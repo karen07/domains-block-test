@@ -26,6 +26,7 @@
 #define MAX_SOCKET_COUNT 1000
 #define POLL_SLEEP_TIME 1000
 #define TRY_COUNT 1
+#define EXIT_WAIT_SEC 5
 
 typedef struct tls_data {
     uint8_t content_type;

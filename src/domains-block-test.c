@@ -1,5 +1,8 @@
 #include "domains-block-test.h"
 
+uint32_t rps;
+double coeff = 1;
+
 void errmsg(const char *format, ...)
 {
     va_list args;
@@ -90,7 +93,8 @@ void print_help(void)
            "  Required parameters:\n"
            "    -f  \"/example.txt\"  Domains file path\n"
            "    -i  \"/example.txt\"  IPs file path\n"
-           "    -n  \"x.x.x.x/xx\"    TUN net\n");
+           "    -n  \"x.x.x.x/xx\"    TUN net\n"
+           "    -r  \"xxx\"           Request per second\n");
 }
 
 uint32_t tun_ip = INADDR_NONE;
@@ -253,23 +257,31 @@ void *send_TUN(__attribute__((unused)) void *arg)
 #define MSS_SIZE 4
     char write_data[sizeof(struct iphdr) + sizeof(struct tcphdr) + MSS_SIZE];
 
-    uint16_t port = 5000;
+    uint16_t port = 0;
 
     for (int32_t k = 0; k < TRY_COUNT; k++) {
         printf("\nTry %d\n", k);
 
-        while (sended < 50000) {
+        while (sended < 131072) {
             int32_t current_ips_num = 0;
             int32_t ret = 0;
             do {
                 current_ips_num = rand() % IPs_count;
                 ret = 0;
-                ret += in_subnet(IPs[current_ips_num].IP, "10.0.0.0/8");
-                ret += in_subnet(IPs[current_ips_num].IP, "172.16.0.0/12");
-                ret += in_subnet(IPs[current_ips_num].IP, "192.168.0.0/16");
-                ret += in_subnet(IPs[current_ips_num].IP, "100.64.0.0/10");
-                ret += in_subnet(IPs[current_ips_num].IP, "0.0.0.0/8");
+                if (IPs[current_ips_num].status != 0) {
+                    ret = 1;
+                } else {
+                    ret += in_subnet(IPs[current_ips_num].IP, "10.0.0.0/8");
+                    ret += in_subnet(IPs[current_ips_num].IP, "172.16.0.0/12");
+                    ret += in_subnet(IPs[current_ips_num].IP, "192.168.0.0/16");
+                    ret += in_subnet(IPs[current_ips_num].IP, "100.64.0.0/10");
+                    ret += in_subnet(IPs[current_ips_num].IP, "0.0.0.0/8");
+                }
             } while (ret > 0);
+
+            if (port == 0) {
+                port = 1000;
+            }
 
             struct iphdr *iph = (struct iphdr *)write_data;
             iph->version = 4;
@@ -281,13 +293,13 @@ void *send_TUN(__attribute__((unused)) void *arg)
             iph->ttl = 128;
             iph->protocol = IPPROTO_TCP;
             iph->check = 0;
-            iph->saddr = htonl(ntohl(tun_ip) + 100 + sended);
+            iph->saddr = htonl(ntohl(tun_ip) + port);
             iph->daddr = IPs[current_ips_num].IP;
 
             IPs[current_ips_num].status = 1;
 
             struct tcphdr *tcph = (struct tcphdr *)(write_data + sizeof(struct iphdr));
-            tcph->source = htons(++port);
+            tcph->source = htons(port++);
             tcph->dest = htons(PORT_TLS);
             tcph->seq = rand();
             tcph->ack_seq = 0;
@@ -322,16 +334,40 @@ void *send_TUN(__attribute__((unused)) void *arg)
 
             sended++;
 
-            usleep(1000);
+            usleep(1000000 / rps / coeff);
         }
     }
 
     return NULL;
 }
 
+static void main_catch_function(int32_t signo)
+{
+    if (signo == SIGINT) {
+        errmsg("SIGINT catched main\n");
+    } else if (signo == SIGSEGV) {
+        errmsg("SIGSEGV catched main\n");
+    } else if (signo == SIGTERM) {
+        errmsg("SIGTERM catched main\n");
+    }
+}
+
 int32_t main(int32_t argc, char *argv[])
 {
     printf("Domains block test started\n");
+
+    if (signal(SIGINT, main_catch_function) == SIG_ERR) {
+        errmsg("Can't set SIGINT signal handler main\n");
+    }
+
+    if (signal(SIGSEGV, main_catch_function) == SIG_ERR) {
+        errmsg("Can't set SIGSEGV signal handler main\n");
+    }
+
+    if (signal(SIGTERM, main_catch_function) == SIG_ERR) {
+        errmsg("Can't set SIGTERM signal handler main\n");
+    }
+
     printf("Launch parameters:\n");
 
     char domains_file_path[PATH_MAX];
@@ -379,6 +415,14 @@ int32_t main(int32_t argc, char *argv[])
                 }
                 continue;
             }
+            if (!strcmp(argv[i], "-r")) {
+                if (i != argc - 1) {
+                    printf("  RPS      \"%s\"\n", argv[i + 1]);
+                    sscanf(argv[i + 1], "%u", &rps);
+                    i++;
+                }
+                continue;
+            }
             print_help();
             errmsg("Unknown command %s\n", argv[i]);
         }
@@ -401,6 +445,11 @@ int32_t main(int32_t argc, char *argv[])
         if (tun_prefix == 0) {
             print_help();
             errmsg("The program need correct TUN prefix\n");
+        }
+
+        if (rps == 0) {
+            print_help();
+            errmsg("Programm need RPS\n");
         }
     }
     //Args
@@ -520,6 +569,8 @@ int32_t main(int32_t argc, char *argv[])
     int32_t sended_old = 0;
     int32_t readed_old = 0;
 
+    int32_t exit_wait = 0;
+
     printf("Send_RPS Read_RPS Sended Readed Diff\n");
     while (true) {
         sleep(1);
@@ -530,6 +581,18 @@ int32_t main(int32_t argc, char *argv[])
                tm_struct->tm_year + 1900, tm_struct->tm_hour, tm_struct->tm_min, tm_struct->tm_sec);
         printf("%08d %08d %06d %06d %04d\n", sended - sended_old, readed - readed_old, sended,
                readed, sended - readed);
+
+        if (readed == readed_old) {
+            exit_wait++;
+        } else {
+            exit_wait = 0;
+        }
+
+        if (exit_wait >= EXIT_WAIT_SEC) {
+            return EXIT_SUCCESS;
+        }
+
+        coeff *= (1.0 * rps) / (sended - sended_old);
 
         sended_old = sended;
         readed_old = readed;
