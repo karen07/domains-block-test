@@ -93,11 +93,41 @@ void print_help(void)
            "    -n  \"x.x.x.x/xx\"    TUN net\n");
 }
 
+static array_hashmap_hash ip_add_hash(const void *add_elem_data)
+{
+    const conn_data_t *elem = add_elem_data;
+    return elem->IP;
+}
+
+static array_hashmap_bool ip_add_cmp(const void *add_elem_data, const void *hashmap_elem_data)
+{
+    const conn_data_t *elem1 = add_elem_data;
+    const conn_data_t *elem2 = hashmap_elem_data;
+
+    return (elem1->IP == elem2->IP);
+}
+
+static array_hashmap_hash ip_find_hash(const void *find_elem_data)
+{
+    const uint32_t *elem = find_elem_data;
+    return *elem;
+}
+
+static array_hashmap_bool ip_find_cmp(const void *find_elem_data, const void *hashmap_elem_data)
+{
+    const uint32_t *elem1 = find_elem_data;
+    const conn_data_t *elem2 = hashmap_elem_data;
+
+    return (*elem1 == elem2->IP);
+}
+
 uint32_t tun_ip = INADDR_NONE;
 uint32_t tun_prefix;
 
 volatile int32_t sended;
 volatile int32_t readed;
+
+array_hashmap_t ip_map_struct;
 
 int32_t tun_alloc(char *dev, int32_t flags)
 {
@@ -180,12 +210,6 @@ static uint16_t checksum(char *buf, uint32_t size)
 
     return ~sum;
 }
-
-typedef struct conn_data {
-    uint32_t IP;
-    int32_t status;
-    int32_t domain;
-} conn_data_t;
 
 int32_t tun_fd = 0;
 char **domains = NULL;
@@ -434,6 +458,14 @@ int32_t main(int32_t argc, char *argv[])
         IPs = (conn_data_t *)malloc(IPs_count * sizeof(conn_data_t));
         memset(IPs, 0, IPs_count * sizeof(conn_data_t));
 
+        ip_map_struct = array_hashmap_init(IPs_count, 1.0, sizeof(conn_data_t));
+        if (ip_map_struct == NULL) {
+            errmsg("No free memory for ip_map_struct\n");
+        }
+
+        array_hashmap_set_func(ip_map_struct, ip_add_hash, ip_add_cmp, ip_find_hash, ip_find_cmp,
+                               ip_find_hash, ip_find_cmp);
+
         char *IP_start = IPs_file_data;
         for (int32_t i = 0; i < IPs_count; i++) {
             IPs[i].IP = inet_addr(IP_start);
@@ -485,7 +517,7 @@ int32_t main(int32_t argc, char *argv[])
         readed_old = readed;
     }
 
-    struct pollfd *pollfd = (struct pollfd *)malloc(MAX_SOCKET_COUNT * sizeof(struct pollfd));
+    /*struct pollfd *pollfd = (struct pollfd *)malloc(MAX_SOCKET_COUNT * sizeof(struct pollfd));
     char *send_data = (char *)malloc(MAX_SOCKET_COUNT * PACKET_MAX_SIZE);
     char *read_data = (char *)malloc(PACKET_MAX_SIZE);
     char *ready_to_write = (char *)malloc(MAX_SOCKET_COUNT);
@@ -699,7 +731,7 @@ int32_t main(int32_t argc, char *argv[])
             printf("\n");
             //Stat
         }
-    }
+    }*/
 
     FILE *blocked_fp = fopen("blocked.txt", "w");
     if (!blocked_fp) {

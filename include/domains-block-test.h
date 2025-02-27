@@ -19,6 +19,7 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
+#include "array_hashmap.h"
 
 #define PORT_TLS 443
 #define PACKET_MAX_SIZE 1500
@@ -63,3 +64,9 @@ typedef struct pseudo_header {
     uint16_t protocol;
     uint16_t length;
 } __attribute__((packed)) pseudo_header_t;
+
+typedef struct conn_data {
+    uint32_t IP;
+    int32_t status;
+    int32_t domain;
+} conn_data_t;

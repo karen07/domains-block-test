@@ -4,7 +4,9 @@ project(domains-block-test)
 
 add_compile_options(-Wall -Wextra -Werror -Wpedantic)
 add_link_options()
-include_directories(include)
+include_directories(include hashmap/include)
+
+add_subdirectory(hashmap)
 
 if(CMAKE_BUILD_TYPE MATCHES "Debug_ASan")
     add_compile_options(-Og -g -fsanitize=address -fno-omit-frame-pointer)
@@ -18,7 +20,7 @@ endif()
 
 file(GLOB SRC "src/*.c")
 add_executable(${PROJECT_NAME} ${SRC})
-target_link_libraries(${PROJECT_NAME})
+target_link_libraries(${PROJECT_NAME} hashmap)
 
 install(TARGETS ${PROJECT_NAME} DESTINATION /usr/bin)
 
