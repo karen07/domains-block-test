@@ -93,18 +93,32 @@ void print_help(void)
            "    -n  \"x.x.x.x/xx\"    TUN net\n");
 }
 
+uint32_t tun_ip = INADDR_NONE;
+uint32_t tun_prefix;
+
+volatile int32_t sended;
+volatile int32_t readed;
+
+array_hashmap_t ip_map_struct;
+
+int32_t tun_fd = 0;
+char **domains = NULL;
+int32_t domains_count = 0;
+conn_data_t *IPs = NULL;
+int32_t IPs_count = 0;
+
 static array_hashmap_hash ip_add_hash(const void *add_elem_data)
 {
-    const conn_data_t *elem = add_elem_data;
-    return elem->IP;
+    const uint32_t *elem = add_elem_data;
+    return IPs[*elem].IP;
 }
 
 static array_hashmap_bool ip_add_cmp(const void *add_elem_data, const void *hashmap_elem_data)
 {
-    const conn_data_t *elem1 = add_elem_data;
-    const conn_data_t *elem2 = hashmap_elem_data;
+    const uint32_t *elem1 = add_elem_data;
+    const uint32_t *elem2 = hashmap_elem_data;
 
-    return (elem1->IP == elem2->IP);
+    return (IPs[*elem1].IP == IPs[*elem2].IP);
 }
 
 static array_hashmap_hash ip_find_hash(const void *find_elem_data)
@@ -116,18 +130,10 @@ static array_hashmap_hash ip_find_hash(const void *find_elem_data)
 static array_hashmap_bool ip_find_cmp(const void *find_elem_data, const void *hashmap_elem_data)
 {
     const uint32_t *elem1 = find_elem_data;
-    const conn_data_t *elem2 = hashmap_elem_data;
+    const uint32_t *elem2 = hashmap_elem_data;
 
-    return (*elem1 == elem2->IP);
+    return (*elem1 == IPs[*elem2].IP);
 }
-
-uint32_t tun_ip = INADDR_NONE;
-uint32_t tun_prefix;
-
-volatile int32_t sended;
-volatile int32_t readed;
-
-array_hashmap_t ip_map_struct;
 
 int32_t tun_alloc(char *dev, int32_t flags)
 {
@@ -211,12 +217,6 @@ static uint16_t checksum(char *buf, uint32_t size)
     return ~sum;
 }
 
-int32_t tun_fd = 0;
-char **domains = NULL;
-int32_t domains_count = 0;
-conn_data_t *IPs = NULL;
-int32_t IPs_count = 0;
-
 void *read_TUN(__attribute__((unused)) void *arg)
 {
     char read_data[PACKET_MAX_SIZE];
@@ -228,7 +228,21 @@ void *read_TUN(__attribute__((unused)) void *arg)
             continue;
         }
 
-        readed++;
+        struct iphdr *iph = (struct iphdr *)read_data;
+
+        uint32_t res_elem;
+        int32_t find_res;
+        find_res = array_hashmap_find_elem(ip_map_struct, &(iph->saddr), &res_elem);
+        if (find_res == array_hashmap_elem_finded) {
+            if (IPs[res_elem].status == 1) {
+                readed++;
+                IPs[res_elem].status = 2;
+            }
+        } else {
+            /*struct in_addr end_subnet_ip_addr;
+            end_subnet_ip_addr.s_addr = iph->saddr;
+            printf("%s\n", inet_ntoa(end_subnet_ip_addr));*/
+        }
     }
 
     return NULL;
@@ -238,14 +252,12 @@ void *send_TUN(__attribute__((unused)) void *arg)
 {
     char write_data[sizeof(struct iphdr) + sizeof(struct tcphdr)];
 
-    uint16_t port = 0;
+    uint16_t port = 5000;
 
     for (int32_t k = 0; k < TRY_COUNT; k++) {
-        int32_t domain_index = 0;
-
         printf("\nTry %d\n", k);
 
-        while (domain_index < domains_count) {
+        while (sended < 1000) {
             int32_t current_ips_num = 0;
             int32_t ret = 0;
             do {
@@ -270,6 +282,8 @@ void *send_TUN(__attribute__((unused)) void *arg)
             iph->check = 0;
             iph->saddr = htonl(ntohl(tun_ip) + 3);
             iph->daddr = IPs[current_ips_num].IP;
+
+            IPs[current_ips_num].status = 1;
 
             struct tcphdr *tcph = (struct tcphdr *)(write_data + sizeof(struct iphdr));
             tcph->source = htons(++port);
@@ -458,7 +472,7 @@ int32_t main(int32_t argc, char *argv[])
         IPs = (conn_data_t *)malloc(IPs_count * sizeof(conn_data_t));
         memset(IPs, 0, IPs_count * sizeof(conn_data_t));
 
-        ip_map_struct = array_hashmap_init(IPs_count, 1.0, sizeof(conn_data_t));
+        ip_map_struct = array_hashmap_init(IPs_count, 1.0, sizeof(uint32_t));
         if (ip_map_struct == NULL) {
             errmsg("No free memory for ip_map_struct\n");
         }
@@ -469,6 +483,8 @@ int32_t main(int32_t argc, char *argv[])
         char *IP_start = IPs_file_data;
         for (int32_t i = 0; i < IPs_count; i++) {
             IPs[i].IP = inet_addr(IP_start);
+
+            array_hashmap_add_elem(ip_map_struct, &i, NULL, NULL);
 
             IP_start = strchr(IP_start, 0) + 1;
         }

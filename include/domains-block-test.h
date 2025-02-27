@@ -25,7 +25,7 @@
 #define PACKET_MAX_SIZE 1500
 #define MAX_SOCKET_COUNT 1000
 #define POLL_SLEEP_TIME 1000
-#define TRY_COUNT 10
+#define TRY_COUNT 1
 
 typedef struct tls_data {
     uint8_t content_type;
