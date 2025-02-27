@@ -324,7 +324,6 @@ void *read_TUN(__attribute__((unused)) void *arg)
                 if (!(domains_index < domains_count)) {
                     domains_index = 0;
                     try_count++;
-                    printf("TRY %d\n", try_count);
                 }
 
                 if (!(try_count < TRY_COUNT)) {
@@ -583,6 +582,8 @@ int32_t main(int32_t argc, char *argv[])
         errmsg("Can't allocate TUN interface\n");
     }
 
+    char *domains_file_data = NULL;
+
     //Domains read
     {
         FILE *domains_fp = fopen(domains_file_path, "r");
@@ -594,7 +595,7 @@ int32_t main(int32_t argc, char *argv[])
         int64_t domains_file_size_add = ftell(domains_fp);
         fseek(domains_fp, 0, SEEK_SET);
 
-        char *domains_file_data = (char *)malloc(domains_file_size_add);
+        domains_file_data = (char *)malloc(domains_file_size_add);
 
         if (fread(domains_file_data, sizeof(char), domains_file_size_add, domains_fp) !=
             (size_t)domains_file_size_add) {
@@ -622,6 +623,8 @@ int32_t main(int32_t argc, char *argv[])
     }
     //Domains read
 
+    char *IPs_file_data = NULL;
+
     //IPs read
     {
         FILE *IPs_fp = fopen(IPs_file_path, "r");
@@ -633,7 +636,7 @@ int32_t main(int32_t argc, char *argv[])
         int64_t IPs_file_size_add = ftell(IPs_fp);
         fseek(IPs_fp, 0, SEEK_SET);
 
-        char *IPs_file_data = (char *)malloc(IPs_file_size_add);
+        IPs_file_data = (char *)malloc(IPs_file_size_add);
 
         if (fread(IPs_file_data, sizeof(char), IPs_file_size_add, IPs_fp) !=
             (size_t)IPs_file_size_add) {
@@ -703,8 +706,9 @@ int32_t main(int32_t argc, char *argv[])
 
         time_t now = time(NULL);
         struct tm *tm_struct = localtime(&now);
-        printf("\n%02d.%02d.%04d %02d:%02d:%02d\n", tm_struct->tm_mday, tm_struct->tm_mon + 1,
-               tm_struct->tm_year + 1900, tm_struct->tm_hour, tm_struct->tm_min, tm_struct->tm_sec);
+        printf("\n%d %02d.%02d.%04d %02d:%02d:%02d\n", try_count, tm_struct->tm_mday,
+               tm_struct->tm_mon + 1, tm_struct->tm_year + 1900, tm_struct->tm_hour,
+               tm_struct->tm_min, tm_struct->tm_sec);
         printf("%08d %08d %06d %06d %04d\n", sended - sended_old, readed - readed_old, sended,
                readed, sended - readed);
 
@@ -734,6 +738,14 @@ int32_t main(int32_t argc, char *argv[])
     }
 
     fclose(blocked_fp);
+
+    free(domains_file_data);
+    free(domains);
+
+    free(IPs_file_data);
+    free(IPs);
+
+    array_hashmap_del(&ip_map_struct);
 
     return EXIT_SUCCESS;
 }
