@@ -14,10 +14,16 @@ volatile int32_t readed;
 array_hashmap_t ip_map_struct;
 
 int32_t tun_fd = 0;
-char **domains = NULL;
+
 int32_t domains_count = 0;
-conn_data_t *IPs = NULL;
+domain_status_t *domains = NULL;
+
+int32_t domains_index = 0;
+
 int32_t IPs_count = 0;
+conn_data_t *IPs = NULL;
+
+int32_t try_count = 0;
 
 void errmsg(const char *format, ...)
 {
@@ -253,11 +259,12 @@ void *read_TUN(__attribute__((unused)) void *arg)
                 if ((read_data[sizeof(struct iphdr) + sizeof(struct tcphdr)] == 0x15) &&
                     (read_data[sizeof(struct iphdr) + sizeof(struct tcphdr) + 1] == 0x3)) {
                     IPs[res_elem].status = 3;
+                    domains[IPs[res_elem].domain].status++;
                 }
             }
         }
 
-        if (IPs[res_elem].status == 1) {
+        if (IPs[res_elem].status == 1 && keep_sending) {
             struct tcphdr *tcph_read = (struct tcphdr *)(read_data + sizeof(struct iphdr));
             if ((tcph_read->syn == 1) && (tcph_read->ack == 1)) {
                 readed++;
@@ -308,8 +315,21 @@ void *read_TUN(__attribute__((unused)) void *arg)
 
                 memset(write_data, 0, PACKET_MAX_SIZE);
 
-                int32_t payload_size = tls_client_hello(
-                    write_data + sizeof(struct iphdr) + sizeof(struct tcphdr), "vk.com");
+                int32_t payload_size =
+                    tls_client_hello(write_data + sizeof(struct iphdr) + sizeof(struct tcphdr),
+                                     domains[domains_index].domain);
+                IPs[res_elem].domain = domains_index;
+                domains_index++;
+
+                if (domains_index > domains_count) {
+                    domains_index = 0;
+                    try_count++;
+                    printf("TRY %d\n", try_count);
+                }
+
+                if (try_count > TRY_COUNT) {
+                    keep_sending = 0;
+                }
 
                 iph_send = (struct iphdr *)write_data;
                 iph_send->version = 4;
@@ -588,11 +608,12 @@ int32_t main(int32_t argc, char *argv[])
             }
         }
 
-        domains = (char **)malloc(domains_count * sizeof(char *));
+        domains = (domain_status_t *)malloc(domains_count * sizeof(domain_status_t));
+        memset(domains, 0, domains_count * sizeof(domain_status_t));
 
         char *domain_start = domains_file_data;
         for (int32_t i = 0; i < domains_count; i++) {
-            domains[i] = domain_start;
+            domains[i].domain = domain_start;
 
             domain_start = strchr(domain_start, 0) + 1;
         }
@@ -648,9 +669,6 @@ int32_t main(int32_t argc, char *argv[])
 
     printf("Domains count: %d\n", domains_count);
     printf("IPs count    : %d\n", IPs_count);
-
-    int32_t *domains_status = (int32_t *)malloc(domains_count * sizeof(int32_t));
-    memset(domains_status, 0, domains_count * sizeof(int32_t));
 
     pthread_t send_thread;
     if (pthread_create(&send_thread, NULL, send_TUN, NULL)) {
@@ -708,7 +726,7 @@ int32_t main(int32_t argc, char *argv[])
     }
 
     for (int32_t i = 0; i < domains_count; i++) {
-        fprintf(blocked_fp, "%d %s\n", domains_status[i], domains[i]);
+        fprintf(blocked_fp, "%d %s\n", domains[i].status, domains[i].domain);
     }
 
     return EXIT_SUCCESS;

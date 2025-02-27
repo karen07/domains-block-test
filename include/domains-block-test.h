@@ -23,9 +23,7 @@
 
 #define PORT_TLS 443
 #define PACKET_MAX_SIZE 1500
-#define MAX_SOCKET_COUNT 1000
-#define POLL_SLEEP_TIME 1000
-#define TRY_COUNT 1
+#define TRY_COUNT 10
 #define EXIT_WAIT_SEC 5
 
 typedef struct tls_data {
@@ -71,3 +69,8 @@ typedef struct conn_data {
     int32_t status;
     int32_t domain;
 } conn_data_t;
+
+typedef struct domain_status {
+    char *domain;
+    int32_t status;
+} domain_status_t;
