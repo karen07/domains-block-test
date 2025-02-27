@@ -3,6 +3,22 @@
 uint32_t rps;
 double coeff = 1;
 
+volatile int32_t keep_sending = 1;
+
+uint32_t tun_ip = INADDR_NONE;
+uint32_t tun_prefix;
+
+volatile int32_t sended;
+volatile int32_t readed;
+
+array_hashmap_t ip_map_struct;
+
+int32_t tun_fd = 0;
+char **domains = NULL;
+int32_t domains_count = 0;
+conn_data_t *IPs = NULL;
+int32_t IPs_count = 0;
+
 void errmsg(const char *format, ...)
 {
     va_list args;
@@ -96,20 +112,6 @@ void print_help(void)
            "    -n  \"x.x.x.x/xx\"    TUN net\n"
            "    -r  \"xxx\"           Request per second\n");
 }
-
-uint32_t tun_ip = INADDR_NONE;
-uint32_t tun_prefix;
-
-volatile int32_t sended;
-volatile int32_t readed;
-
-array_hashmap_t ip_map_struct;
-
-int32_t tun_fd = 0;
-char **domains = NULL;
-int32_t domains_count = 0;
-conn_data_t *IPs = NULL;
-int32_t IPs_count = 0;
 
 static array_hashmap_hash ip_add_hash(const void *add_elem_data)
 {
@@ -230,7 +232,7 @@ void *read_TUN(__attribute__((unused)) void *arg)
 
     while (true) {
         int32_t nread = read(tun_fd, read_data, PACKET_MAX_SIZE);
-        if (nread < 1) {
+        if (nread < (int32_t)(sizeof(struct iphdr) + sizeof(struct tcphdr))) {
             continue;
         }
 
@@ -244,6 +246,15 @@ void *read_TUN(__attribute__((unused)) void *arg)
         find_res = array_hashmap_find_elem(ip_map_struct, &(iph_read->saddr), &res_elem);
         if (find_res != array_hashmap_elem_finded) {
             continue;
+        }
+
+        if (IPs[res_elem].status == 2) {
+            if (ntohs(iph_read->tot_len) == 47) {
+                if ((read_data[sizeof(struct iphdr) + sizeof(struct tcphdr)] == 0x15) &&
+                    (read_data[sizeof(struct iphdr) + sizeof(struct tcphdr) + 1] == 0x3)) {
+                    IPs[res_elem].status = 3;
+                }
+            }
         }
 
         if (IPs[res_elem].status == 1) {
@@ -355,84 +366,80 @@ void *send_TUN(__attribute__((unused)) void *arg)
 
     uint16_t port = 0;
 
-    for (int32_t k = 0; k < TRY_COUNT; k++) {
-        printf("\nTry %d\n", k);
-
-        while (sended < 10000) {
-            int32_t current_ips_num = 0;
-            int32_t ret = 0;
-            do {
-                current_ips_num = rand() % IPs_count;
-                ret = 0;
-                if (IPs[current_ips_num].status != 0) {
-                    ret = 1;
-                } else {
-                    ret += in_subnet(IPs[current_ips_num].IP, "10.0.0.0/8");
-                    ret += in_subnet(IPs[current_ips_num].IP, "172.16.0.0/12");
-                    ret += in_subnet(IPs[current_ips_num].IP, "192.168.0.0/16");
-                    ret += in_subnet(IPs[current_ips_num].IP, "100.64.0.0/10");
-                    ret += in_subnet(IPs[current_ips_num].IP, "0.0.0.0/8");
-                }
-            } while (ret > 0);
-
-            if (port == 0) {
-                port = 1000;
+    while (keep_sending) {
+        int32_t current_ips_num = 0;
+        int32_t ret = 0;
+        do {
+            current_ips_num = rand() % IPs_count;
+            ret = 0;
+            if (IPs[current_ips_num].status != 0) {
+                ret = 1;
+            } else {
+                ret += in_subnet(IPs[current_ips_num].IP, "10.0.0.0/8");
+                ret += in_subnet(IPs[current_ips_num].IP, "172.16.0.0/12");
+                ret += in_subnet(IPs[current_ips_num].IP, "192.168.0.0/16");
+                ret += in_subnet(IPs[current_ips_num].IP, "100.64.0.0/10");
+                ret += in_subnet(IPs[current_ips_num].IP, "0.0.0.0/8");
             }
+        } while (ret > 0);
 
-            memset(write_data, 0, sizeof(struct iphdr) + sizeof(struct tcphdr) + MSS_SIZE);
-
-            struct iphdr *iph = (struct iphdr *)write_data;
-            iph->version = 4;
-            iph->ihl = sizeof(struct iphdr) / 4;
-            iph->tos = 0;
-            iph->tot_len = htons(sizeof(struct iphdr) + sizeof(struct tcphdr) + MSS_SIZE);
-            iph->id = 0;
-            iph->frag_off = htons(0x4000);
-            iph->ttl = 128;
-            iph->protocol = IPPROTO_TCP;
-            iph->check = 0;
-            iph->saddr = htonl(ntohl(tun_ip) + port);
-            iph->daddr = IPs[current_ips_num].IP;
-
-            IPs[current_ips_num].status = 1;
-
-            struct tcphdr *tcph = (struct tcphdr *)(write_data + sizeof(struct iphdr));
-            tcph->source = htons(port++);
-            tcph->dest = htons(PORT_TLS);
-            tcph->seq = rand();
-            tcph->ack_seq = 0;
-            tcph->res1 = 0;
-            tcph->doff = (sizeof(struct tcphdr) + MSS_SIZE) / 4;
-            tcph->syn = 1;
-            tcph->window = 0xffff;
-            tcph->check = 0;
-            tcph->urg_ptr = 0;
-
-            char *tcp_opt_ptr = write_data + sizeof(struct iphdr) + sizeof(struct tcphdr);
-            tcp_opt_ptr[0] = 2;
-            tcp_opt_ptr[1] = 4;
-            *((uint16_t *)(&tcp_opt_ptr[2])) = htons(1400);
-
-            uint16_t L4_len = ntohs(iph->tot_len) - (iph->ihl << 2);
-            pseudo_header_t psh;
-            psh.source_address = iph->saddr;
-            psh.dest_address = iph->daddr;
-            psh.protocol = htons(IPPROTO_TCP);
-            psh.length = htons(L4_len);
-            char pseudogram[PACKET_MAX_SIZE];
-            memcpy(pseudogram, (char *)&psh, sizeof(pseudo_header_t));
-            memcpy(pseudogram + sizeof(pseudo_header_t), write_data + sizeof(struct iphdr), L4_len);
-            int32_t psize = sizeof(pseudo_header_t) + L4_len;
-            uint16_t checksum_value = checksum(pseudogram, psize);
-            tcph->check = checksum_value;
-            iph->check = checksum(write_data, iph->ihl << 2);
-
-            write(tun_fd, write_data, ntohs(iph->tot_len));
-
-            sended++;
-
-            usleep(1000000 / rps / coeff);
+        if (port == 0) {
+            port = 1000;
         }
+
+        memset(write_data, 0, sizeof(struct iphdr) + sizeof(struct tcphdr) + MSS_SIZE);
+
+        struct iphdr *iph = (struct iphdr *)write_data;
+        iph->version = 4;
+        iph->ihl = sizeof(struct iphdr) / 4;
+        iph->tos = 0;
+        iph->tot_len = htons(sizeof(struct iphdr) + sizeof(struct tcphdr) + MSS_SIZE);
+        iph->id = 0;
+        iph->frag_off = htons(0x4000);
+        iph->ttl = 128;
+        iph->protocol = IPPROTO_TCP;
+        iph->check = 0;
+        iph->saddr = htonl(ntohl(tun_ip) + port);
+        iph->daddr = IPs[current_ips_num].IP;
+
+        IPs[current_ips_num].status = 1;
+
+        struct tcphdr *tcph = (struct tcphdr *)(write_data + sizeof(struct iphdr));
+        tcph->source = htons(port++);
+        tcph->dest = htons(PORT_TLS);
+        tcph->seq = rand();
+        tcph->ack_seq = 0;
+        tcph->res1 = 0;
+        tcph->doff = (sizeof(struct tcphdr) + MSS_SIZE) / 4;
+        tcph->syn = 1;
+        tcph->window = 0xffff;
+        tcph->check = 0;
+        tcph->urg_ptr = 0;
+
+        char *tcp_opt_ptr = write_data + sizeof(struct iphdr) + sizeof(struct tcphdr);
+        tcp_opt_ptr[0] = 2;
+        tcp_opt_ptr[1] = 4;
+        *((uint16_t *)(&tcp_opt_ptr[2])) = htons(1400);
+
+        uint16_t L4_len = ntohs(iph->tot_len) - (iph->ihl << 2);
+        pseudo_header_t psh;
+        psh.source_address = iph->saddr;
+        psh.dest_address = iph->daddr;
+        psh.protocol = htons(IPPROTO_TCP);
+        psh.length = htons(L4_len);
+        char pseudogram[PACKET_MAX_SIZE];
+        memcpy(pseudogram, (char *)&psh, sizeof(pseudo_header_t));
+        memcpy(pseudogram + sizeof(pseudo_header_t), write_data + sizeof(struct iphdr), L4_len);
+        int32_t psize = sizeof(pseudo_header_t) + L4_len;
+        uint16_t checksum_value = checksum(pseudogram, psize);
+        tcph->check = checksum_value;
+        iph->check = checksum(write_data, iph->ihl << 2);
+
+        write(tun_fd, write_data, ntohs(iph->tot_len));
+
+        sended++;
+
+        usleep(1000000 / rps / coeff);
     }
 
     return NULL;
@@ -694,222 +701,6 @@ int32_t main(int32_t argc, char *argv[])
         sended_old = sended;
         readed_old = readed;
     }
-
-    /*struct pollfd *pollfd = (struct pollfd *)malloc(MAX_SOCKET_COUNT * sizeof(struct pollfd));
-    char *send_data = (char *)malloc(MAX_SOCKET_COUNT * PACKET_MAX_SIZE);
-    char *read_data = (char *)malloc(PACKET_MAX_SIZE);
-    char *ready_to_write = (char *)malloc(MAX_SOCKET_COUNT);
-    int32_t *sock_to_domain = (int32_t *)malloc(MAX_SOCKET_COUNT * sizeof(int32_t));
-    int32_t *sock_to_ip = (int32_t *)malloc(MAX_SOCKET_COUNT * sizeof(int32_t));
-
-    for (int32_t k = 0; k < TRY_COUNT; k++) {
-        int32_t domain_index = 0;
-
-        printf("\nTry %d\n", k);
-
-        while (domain_index < domains_count) {
-            for (int32_t i = 0; i < MAX_SOCKET_COUNT; i++) {
-                pollfd[i].fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
-            }
-
-            int32_t create_err = 0;
-            int32_t connect_err = 0;
-            int32_t pollout_err = 0;
-            int32_t write_err = 0;
-            int32_t timeout_err = 0;
-            int32_t pollin_err = 0;
-
-            for (int32_t i = 0; i < MAX_SOCKET_COUNT; i++) {
-                if (pollfd[i].fd != -1) {
-                    int32_t ret = 0;
-                    int32_t current_ips_num = 0;
-                    do {
-                        current_ips_num = rand() % IPs_count;
-                        ret = 0;
-                        ret += in_subnet(IPs[current_ips_num].IP, "10.0.0.0/8");
-                        ret += in_subnet(IPs[current_ips_num].IP, "172.16.0.0/12");
-                        ret += in_subnet(IPs[current_ips_num].IP, "192.168.0.0/16");
-                        ret += in_subnet(IPs[current_ips_num].IP, "100.64.0.0/10");
-                        ret += in_subnet(IPs[current_ips_num].IP, "0.0.0.0/30");
-                    } while (ret > 0);
-
-                    struct sockaddr_in servaddr;
-                    memset(&servaddr, 0, sizeof(servaddr));
-                    servaddr.sin_family = AF_INET;
-                    servaddr.sin_addr.s_addr = IPs[current_ips_num].IP;
-                    servaddr.sin_port = htons(PORT_TLS);
-
-                    sock_to_ip[i] = IPs[current_ips_num].IP;
-
-                    if (connect(pollfd[i].fd, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
-                        if (errno != EINPROGRESS) {
-                            close(pollfd[i].fd);
-                            pollfd[i].fd = -1;
-                            connect_err++;
-                        }
-                    }
-                } else {
-                    create_err++;
-                }
-            }
-
-            //Ready to write
-            for (int32_t i = 0; i < MAX_SOCKET_COUNT; i++) {
-                if (pollfd[i].fd != -1) {
-                    pollfd[i].events = POLLOUT;
-                } else {
-                    pollfd[i].events = 0;
-                }
-                pollfd[i].revents = 0;
-            }
-
-            memset(ready_to_write, 0, MAX_SOCKET_COUNT);
-
-            while (poll(pollfd, MAX_SOCKET_COUNT, POLL_SLEEP_TIME) > 0) {
-                for (int32_t i = 0; i < MAX_SOCKET_COUNT; i++) {
-                    if (pollfd[i].revents != 0 && pollfd[i].revents != POLLOUT) {
-                        close(pollfd[i].fd);
-                        pollfd[i].fd = -1;
-                        pollfd[i].events = 0;
-                        pollfd[i].revents = 0;
-                        pollout_err++;
-                    }
-                    if (pollfd[i].revents == POLLOUT) {
-                        pollfd[i].events = 0;
-                        pollfd[i].revents = 0;
-
-                        ready_to_write[i] = 1;
-                    }
-                }
-            }
-            //Ready to write
-
-            //Write
-            for (int32_t i = 0; i < MAX_SOCKET_COUNT; i++) {
-                if (pollfd[i].fd != -1) {
-                    if (ready_to_write[i] == 1) {
-                        if (domain_index < domains_count) {
-                            sock_to_domain[i] = domain_index;
-
-                            char *send_data_local = &send_data[i * PACKET_MAX_SIZE];
-
-                            int32_t send_size = 0;
-                            send_size = tls_client_hello(send_data_local, domains[domain_index]);
-
-                            int32_t sended = 0;
-                            sended = write(pollfd[i].fd, send_data_local, send_size);
-                            if (sended != send_size) {
-                                close(pollfd[i].fd);
-                                pollfd[i].fd = -1;
-                                write_err++;
-                            }
-
-                            domain_index++;
-                        } else {
-                            close(pollfd[i].fd);
-                            pollfd[i].fd = -1;
-                        }
-                    } else {
-                        close(pollfd[i].fd);
-                        pollfd[i].fd = -1;
-                        timeout_err++;
-                    }
-                }
-            }
-            //Write
-
-            //Ready to read
-            for (int32_t i = 0; i < MAX_SOCKET_COUNT; i++) {
-                if (pollfd[i].fd != -1) {
-                    pollfd[i].events = POLLIN;
-                } else {
-                    pollfd[i].events = 0;
-                }
-                pollfd[i].revents = 0;
-            }
-
-            while (poll(pollfd, MAX_SOCKET_COUNT, POLL_SLEEP_TIME) > 0) {
-                for (int32_t i = 0; i < MAX_SOCKET_COUNT; i++) {
-                    if (pollfd[i].revents != 0 && pollfd[i].revents != POLLIN) {
-                        close(pollfd[i].fd);
-                        pollfd[i].fd = -1;
-                        pollfd[i].events = 0;
-                        pollfd[i].revents = 0;
-                        pollin_err++;
-                    }
-                    if (pollfd[i].revents == POLLIN) {
-                        int32_t readed = 0;
-                        readed = read(pollfd[i].fd, read_data, PACKET_MAX_SIZE);
-                        if (readed == 7) {
-                            if (read_data[0] == 0x15 && read_data[1] == 0x3) {
-                                domains_status[sock_to_domain[i]]++;
-                                //printf("Karen %s\n", domains[sock_to_domain[i]]);
-                                //struct in_addr end_subnet_ip_addr;
-                                //end_subnet_ip_addr.s_addr = sock_to_ip[i];
-                                //printf("%s\n", inet_ntoa(end_subnet_ip_addr));
-                            }
-                        }
-
-                        close(pollfd[i].fd);
-                        pollfd[i].fd = -1;
-                        pollfd[i].events = 0;
-                        pollfd[i].revents = 0;
-                    }
-                }
-            }
-            //Ready to read
-
-            //Find blocked
-            for (int32_t i = 0; i < MAX_SOCKET_COUNT; i++) {
-                if (pollfd[i].fd != -1 && pollfd[i].events == POLLIN) {
-                    domains_status[sock_to_domain[i]]--;
-                    //        if (domains_status[sock_to_domain[i]] != 2) {
-                    //            domains_status[sock_to_domain[i]] = 1;
-                    //        }
-                }
-            }
-            //Find blocked
-
-            //Close
-            for (int32_t i = 0; i < MAX_SOCKET_COUNT; i++) {
-                if (pollfd[i].fd != -1) {
-                    close(pollfd[i].fd);
-                }
-            }
-            //Close
-
-            //Stat
-            int32_t in_work_count = 0;
-            int32_t blocked_count = 0;
-            int32_t notblocked_count = 0;
-            for (int32_t i = 0; i < domains_count; i++) {
-                if (domains_status[i] == 0) {
-                    in_work_count++;
-                }
-                if (domains_status[i] < 0) {
-                    blocked_count++;
-                }
-                if (domains_status[i] > 0) {
-                    notblocked_count++;
-                }
-            }
-            printf("\n");
-            printf("in_work_count %d ", in_work_count);
-            printf("blocked_count %d ", blocked_count);
-            printf("notblocked_count %d ", notblocked_count);
-            printf("domain_index %d ", domain_index);
-            printf("\n");
-            printf("opened %d ", MAX_SOCKET_COUNT);
-            printf("create_err %d ", create_err);
-            printf("connect_err %d ", connect_err);
-            printf("pollout_err %d ", pollout_err);
-            printf("write_err %d ", write_err);
-            printf("timeout_err %d ", timeout_err);
-            printf("pollin_err %d ", pollin_err);
-            printf("\n");
-            //Stat
-        }
-    }*/
 
     FILE *blocked_fp = fopen("blocked.txt", "w");
     if (!blocked_fp) {
