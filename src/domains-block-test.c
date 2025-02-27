@@ -734,7 +734,9 @@ int32_t main(int32_t argc, char *argv[])
     }
 
     for (int32_t i = 0; i < domains_count; i++) {
-        fprintf(blocked_fp, "%d %s\n", domains[i].status, domains[i].domain);
+        if (domains[i].status <= TRY_COUNT / 3) {
+            fprintf(blocked_fp, "%d %s\n", domains[i].status, domains[i].domain);
+        }
     }
 
     fclose(blocked_fp);
