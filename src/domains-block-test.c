@@ -287,7 +287,7 @@ void *send_TUN(__attribute__((unused)) void *arg)
 
             struct tcphdr *tcph = (struct tcphdr *)(write_data + sizeof(struct iphdr));
             tcph->source = htons(++port);
-            tcph->dest = htons(443);
+            tcph->dest = htons(PORT_TLS);
             tcph->seq = rand();
             tcph->ack_seq = 0;
             tcph->res1 = 0;
