@@ -224,28 +224,124 @@ static uint16_t checksum(char *buf, uint32_t size)
 void *read_TUN(__attribute__((unused)) void *arg)
 {
     char read_data[PACKET_MAX_SIZE];
+    char write_data[PACKET_MAX_SIZE];
+    char pseudogram[PACKET_MAX_SIZE];
+    char write_data_ack[sizeof(struct iphdr) + sizeof(struct tcphdr)];
 
     while (true) {
         int32_t nread = read(tun_fd, read_data, PACKET_MAX_SIZE);
-
         if (nread < 1) {
             continue;
         }
 
-        struct iphdr *iph = (struct iphdr *)read_data;
+        struct iphdr *iph_read = (struct iphdr *)read_data;
+        if (iph_read->protocol != IPPROTO_TCP) {
+            continue;
+        }
 
         uint32_t res_elem;
         int32_t find_res;
-        find_res = array_hashmap_find_elem(ip_map_struct, &(iph->saddr), &res_elem);
-        if (find_res == array_hashmap_elem_finded) {
-            if (IPs[res_elem].status == 1) {
+        find_res = array_hashmap_find_elem(ip_map_struct, &(iph_read->saddr), &res_elem);
+        if (find_res != array_hashmap_elem_finded) {
+            continue;
+        }
+
+        if (IPs[res_elem].status == 1) {
+            struct tcphdr *tcph_read = (struct tcphdr *)(read_data + sizeof(struct iphdr));
+            if ((tcph_read->syn == 1) && (tcph_read->ack == 1)) {
                 readed++;
                 IPs[res_elem].status = 2;
+
+                memset(write_data_ack, 0, sizeof(struct iphdr) + sizeof(struct tcphdr));
+
+                struct iphdr *iph_send = (struct iphdr *)write_data_ack;
+                iph_send->version = 4;
+                iph_send->ihl = sizeof(struct iphdr) / 4;
+                iph_send->tos = 0;
+                iph_send->tot_len = htons(sizeof(struct iphdr) + sizeof(struct tcphdr));
+                iph_send->id = 0;
+                iph_send->frag_off = htons(0x4000);
+                iph_send->ttl = 128;
+                iph_send->protocol = IPPROTO_TCP;
+                iph_send->check = 0;
+                iph_send->saddr = iph_read->daddr;
+                iph_send->daddr = iph_read->saddr;
+
+                struct tcphdr *tcph_send = (struct tcphdr *)(write_data_ack + sizeof(struct iphdr));
+                tcph_send->source = tcph_read->dest;
+                tcph_send->dest = tcph_read->source;
+                tcph_send->seq = tcph_read->ack_seq;
+                tcph_send->ack_seq = htonl(ntohl(tcph_read->seq) + 1);
+                tcph_send->res1 = 0;
+                tcph_send->doff = (sizeof(struct tcphdr)) / 4;
+                tcph_send->ack = 1;
+                tcph_send->window = 0xffff;
+                tcph_send->check = 0;
+                tcph_send->urg_ptr = 0;
+
+                uint16_t L4_len = ntohs(iph_send->tot_len) - (iph_send->ihl << 2);
+                pseudo_header_t psh;
+                psh.source_address = iph_send->saddr;
+                psh.dest_address = iph_send->daddr;
+                psh.protocol = htons(IPPROTO_TCP);
+                psh.length = htons(L4_len);
+                memcpy(pseudogram, (char *)&psh, sizeof(pseudo_header_t));
+                memcpy(pseudogram + sizeof(pseudo_header_t), write_data_ack + sizeof(struct iphdr),
+                       L4_len);
+                int32_t psize = sizeof(pseudo_header_t) + L4_len;
+                uint16_t checksum_value = checksum(pseudogram, psize);
+                tcph_send->check = checksum_value;
+                iph_send->check = checksum(write_data_ack, iph_send->ihl << 2);
+
+                write(tun_fd, write_data_ack, ntohs(iph_send->tot_len));
+
+                memset(write_data, 0, PACKET_MAX_SIZE);
+
+                int32_t payload_size = tls_client_hello(
+                    write_data + sizeof(struct iphdr) + sizeof(struct tcphdr), "vk.com");
+
+                iph_send = (struct iphdr *)write_data;
+                iph_send->version = 4;
+                iph_send->ihl = sizeof(struct iphdr) / 4;
+                iph_send->tos = 0;
+                iph_send->tot_len =
+                    htons(sizeof(struct iphdr) + sizeof(struct tcphdr) + payload_size);
+                iph_send->id = 0;
+                iph_send->frag_off = htons(0x4000);
+                iph_send->ttl = 128;
+                iph_send->protocol = IPPROTO_TCP;
+                iph_send->check = 0;
+                iph_send->saddr = iph_read->daddr;
+                iph_send->daddr = iph_read->saddr;
+
+                tcph_send = (struct tcphdr *)(write_data + sizeof(struct iphdr));
+                tcph_send->source = tcph_read->dest;
+                tcph_send->dest = tcph_read->source;
+                tcph_send->seq = tcph_read->ack_seq;
+                tcph_send->ack_seq = htonl(ntohl(tcph_read->seq) + 1);
+                tcph_send->res1 = 0;
+                tcph_send->doff = (sizeof(struct tcphdr)) / 4;
+                tcph_send->ack = 1;
+                tcph_send->psh = 1;
+                tcph_send->window = 0xffff;
+                tcph_send->check = 0;
+                tcph_send->urg_ptr = 0;
+
+                L4_len = ntohs(iph_send->tot_len) - (iph_send->ihl << 2);
+                psh.source_address = iph_send->saddr;
+                psh.dest_address = iph_send->daddr;
+                psh.protocol = htons(IPPROTO_TCP);
+                psh.length = htons(L4_len);
+                memcpy(pseudogram, (char *)&psh, sizeof(pseudo_header_t));
+                memcpy(pseudogram + sizeof(pseudo_header_t), write_data + sizeof(struct iphdr),
+                       L4_len);
+                psize = sizeof(pseudo_header_t) + L4_len;
+                checksum_value = checksum(pseudogram, psize);
+                tcph_send->check = checksum_value;
+                iph_send->check = checksum(write_data, iph_send->ihl << 2);
+
+                write(tun_fd, write_data, ntohs(iph_send->tot_len));
             }
-        } else {
-            /*struct in_addr end_subnet_ip_addr;
-            end_subnet_ip_addr.s_addr = iph->saddr;
-            printf("%s\n", inet_ntoa(end_subnet_ip_addr));*/
         }
     }
 
@@ -262,7 +358,7 @@ void *send_TUN(__attribute__((unused)) void *arg)
     for (int32_t k = 0; k < TRY_COUNT; k++) {
         printf("\nTry %d\n", k);
 
-        while (sended < 131072) {
+        while (sended < 10000) {
             int32_t current_ips_num = 0;
             int32_t ret = 0;
             do {
@@ -282,6 +378,8 @@ void *send_TUN(__attribute__((unused)) void *arg)
             if (port == 0) {
                 port = 1000;
             }
+
+            memset(write_data, 0, sizeof(struct iphdr) + sizeof(struct tcphdr) + MSS_SIZE);
 
             struct iphdr *iph = (struct iphdr *)write_data;
             iph->version = 4;
@@ -313,8 +411,7 @@ void *send_TUN(__attribute__((unused)) void *arg)
             char *tcp_opt_ptr = write_data + sizeof(struct iphdr) + sizeof(struct tcphdr);
             tcp_opt_ptr[0] = 2;
             tcp_opt_ptr[1] = 4;
-            tcp_opt_ptr[2] = 0x05;
-            tcp_opt_ptr[3] = 0x78;
+            *((uint16_t *)(&tcp_opt_ptr[2])) = htons(1400);
 
             uint16_t L4_len = ntohs(iph->tot_len) - (iph->ihl << 2);
             pseudo_header_t psh;
@@ -330,7 +427,7 @@ void *send_TUN(__attribute__((unused)) void *arg)
             tcph->check = checksum_value;
             iph->check = checksum(write_data, iph->ihl << 2);
 
-            write(tun_fd, write_data, sizeof(struct iphdr) + sizeof(struct tcphdr) + MSS_SIZE);
+            write(tun_fd, write_data, ntohs(iph->tot_len));
 
             sended++;
 
@@ -589,7 +686,7 @@ int32_t main(int32_t argc, char *argv[])
         }
 
         if (exit_wait >= EXIT_WAIT_SEC) {
-            return EXIT_SUCCESS;
+            break;
         }
 
         coeff *= (1.0 * rps) / (sended - sended_old);
