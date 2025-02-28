@@ -380,7 +380,6 @@ void *read_TUN(__attribute__((unused)) void *arg)
 
 void *send_TUN(__attribute__((unused)) void *arg)
 {
-#define MSS_SIZE 4
     char write_data[sizeof(struct iphdr) + sizeof(struct tcphdr) + MSS_SIZE];
 
     uint16_t port = 0;

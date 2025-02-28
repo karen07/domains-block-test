@@ -2,12 +2,12 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <linux/if.h>
 #include <linux/if_tun.h>
 #include <linux/ip.h>
+#include <linux/limits.h>
 #include <linux/tcp.h>
 #include <linux/udp.h>
-#include <net/if.h>
-#include <net/route.h>
 #include <poll.h>
 #include <pthread.h>
 #include <signal.h>
@@ -25,6 +25,7 @@
 #define PACKET_MAX_SIZE 1500
 #define TRY_COUNT 24
 #define EXIT_WAIT_SEC 5
+#define MSS_SIZE 4
 
 typedef struct tls_data {
     uint8_t content_type;
