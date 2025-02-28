@@ -258,6 +258,7 @@ void *read_TUN(__attribute__((unused)) void *arg)
             if (ntohs(iph_read->tot_len) == 47) {
                 if ((read_data[sizeof(struct iphdr) + sizeof(struct tcphdr)] == 0x15) &&
                     (read_data[sizeof(struct iphdr) + sizeof(struct tcphdr) + 1] == 0x3)) {
+                    readed++;
                     IPs[res_elem].status = 3;
                     domains[IPs[res_elem].domain].status++;
                 }
@@ -699,7 +700,7 @@ int32_t main(int32_t argc, char *argv[])
 
     int32_t exit_wait = 0;
 
-    printf("Send_RPS Read_RPS Sended Readed Diff\n");
+    printf("Send_RPS Read_RPS Sended Readed\n");
     while (true) {
         sleep(1);
 
@@ -708,8 +709,7 @@ int32_t main(int32_t argc, char *argv[])
         printf("\n%d %02d.%02d.%04d %02d:%02d:%02d\n", try_count, tm_struct->tm_mday,
                tm_struct->tm_mon + 1, tm_struct->tm_year + 1900, tm_struct->tm_hour,
                tm_struct->tm_min, tm_struct->tm_sec);
-        printf("%08d %08d %06d %06d %04d\n", sended - sended_old, readed - readed_old, sended,
-               readed, sended - readed);
+        printf("%08d %08d %06d %06d\n", sended - sended_old, readed - readed_old, sended, readed);
 
         if (readed == readed_old) {
             exit_wait++;
