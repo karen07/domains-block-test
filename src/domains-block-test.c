@@ -268,7 +268,7 @@ void *read_TUN(__attribute__((unused)) void *arg)
         if (IPs[res_elem].status == 1 && keep_sending) {
             struct tcphdr *tcph_read = (struct tcphdr *)(read_data + sizeof(struct iphdr));
             if ((tcph_read->syn == 1) && (tcph_read->ack == 1)) {
-                readed++;
+                sended++;
                 IPs[res_elem].status = 2;
 
                 memset(write_data_ack, 0, sizeof(struct iphdr) + sizeof(struct tcphdr));
@@ -455,8 +455,6 @@ void *send_TUN(__attribute__((unused)) void *arg)
         iph->check = checksum(write_data, iph->ihl << 2);
 
         write(tun_fd, write_data, ntohs(iph->tot_len));
-
-        sended++;
 
         usleep(1000000 / rps / coeff);
     }
@@ -739,6 +737,8 @@ int32_t main(int32_t argc, char *argv[])
     }
 
     fclose(blocked_fp);
+
+    close(tun_fd);
 
     free(domains_file_data);
     free(domains);
