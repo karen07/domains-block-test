@@ -247,6 +247,8 @@ void *read_TUN(__attribute__((unused)) void *arg)
             continue;
         }
 
+        struct tcphdr *tcph_read = (struct tcphdr *)(read_data + sizeof(struct iphdr));
+
         uint32_t res_elem;
         int32_t find_res;
         find_res = array_hashmap_find_elem(ip_map_struct, &(iph_read->saddr), &res_elem);
@@ -259,14 +261,59 @@ void *read_TUN(__attribute__((unused)) void *arg)
                 if ((read_data[sizeof(struct iphdr) + sizeof(struct tcphdr)] == 0x15) &&
                     (read_data[sizeof(struct iphdr) + sizeof(struct tcphdr) + 1] == 0x3)) {
                     readed++;
-                    IPs[res_elem].status = 3;
+                    IPs[res_elem].status = 0;
+
                     domains[IPs[res_elem].domain].status++;
+
+                    memset(write_data_ack, 0, sizeof(struct iphdr) + sizeof(struct tcphdr));
+
+                    struct iphdr *iph_send = (struct iphdr *)write_data_ack;
+                    iph_send->version = 4;
+                    iph_send->ihl = sizeof(struct iphdr) / 4;
+                    iph_send->tos = 0;
+                    iph_send->tot_len = htons(sizeof(struct iphdr) + sizeof(struct tcphdr));
+                    iph_send->id = 0;
+                    iph_send->frag_off = htons(0x4000);
+                    iph_send->ttl = 128;
+                    iph_send->protocol = IPPROTO_TCP;
+                    iph_send->check = 0;
+                    iph_send->saddr = iph_read->daddr;
+                    iph_send->daddr = iph_read->saddr;
+
+                    struct tcphdr *tcph_send =
+                        (struct tcphdr *)(write_data_ack + sizeof(struct iphdr));
+                    tcph_send->source = tcph_read->dest;
+                    tcph_send->dest = tcph_read->source;
+                    tcph_send->seq = tcph_read->ack_seq;
+                    tcph_send->ack_seq = htonl(ntohl(tcph_read->seq) + 1);
+                    tcph_send->res1 = 0;
+                    tcph_send->doff = (sizeof(struct tcphdr)) / 4;
+                    tcph_send->ack = 1;
+                    tcph_send->rst = 1;
+                    tcph_send->window = 0xffff;
+                    tcph_send->check = 0;
+                    tcph_send->urg_ptr = 0;
+
+                    uint16_t L4_len = ntohs(iph_send->tot_len) - (iph_send->ihl << 2);
+                    pseudo_header_t psh;
+                    psh.source_address = iph_send->saddr;
+                    psh.dest_address = iph_send->daddr;
+                    psh.protocol = htons(IPPROTO_TCP);
+                    psh.length = htons(L4_len);
+                    memcpy(pseudogram, (char *)&psh, sizeof(pseudo_header_t));
+                    memcpy(pseudogram + sizeof(pseudo_header_t),
+                           write_data_ack + sizeof(struct iphdr), L4_len);
+                    int32_t psize = sizeof(pseudo_header_t) + L4_len;
+                    uint16_t checksum_value = checksum(pseudogram, psize);
+                    tcph_send->check = checksum_value;
+                    iph_send->check = checksum(write_data_ack, iph_send->ihl << 2);
+
+                    write(tun_fd, write_data_ack, ntohs(iph_send->tot_len));
                 }
             }
         }
 
         if (IPs[res_elem].status == 1 && keep_sending) {
-            struct tcphdr *tcph_read = (struct tcphdr *)(read_data + sizeof(struct iphdr));
             if ((tcph_read->syn == 1) && (tcph_read->ack == 1)) {
                 sended++;
                 IPs[res_elem].status = 2;
