@@ -715,14 +715,16 @@ int32_t main(int32_t argc, char *argv[])
                 eth_bin2str(eth_h->h_source, src);
                 eth_bin2str(eth_h->h_dest, dst);
 
-                printf("src dst %s %s\n", src, dst);
+                if (memcpy(dev_mac, eth_h->h_source, 6)) {
+                    printf("src %s\n", src);
+                }
 
                 struct iphdr *ip_h = (struct iphdr *)(buffer + sizeof(struct ethhdr));
                 struct in_addr src_ip_s;
                 src_ip_s.s_addr = ip_h->saddr;
                 struct in_addr dst_ip_s;
                 dst_ip_s.s_addr = ip_h->daddr;
-                printf("src dst %s %s\n", inet_ntoa(src_ip_s), inet_ntoa(dst_ip_s));
+                //printf("src dst %s %s\n", inet_ntoa(src_ip_s), inet_ntoa(dst_ip_s));
             }
         }
     }
