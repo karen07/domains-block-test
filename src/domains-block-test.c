@@ -5,15 +5,13 @@ double coeff = 1;
 
 volatile int32_t keep_sending = 1;
 
-uint32_t tun_ip = INADDR_NONE;
-uint32_t tun_prefix;
-
 volatile int32_t sended;
 volatile int32_t readed;
 
-array_hashmap_t ip_map_struct;
+int32_t raw_fd = 0;
+uint32_t dev_ip = 0;
 
-int32_t tun_fd = 0;
+array_hashmap_t ip_map_struct;
 
 int32_t domains_count = 0;
 domain_status_t *domains = NULL;
@@ -115,7 +113,7 @@ void print_help(void)
            "  Required parameters:\n"
            "    -f  \"/example.txt\"  Domains file path\n"
            "    -i  \"/example.txt\"  IPs file path\n"
-           "    -n  \"x.x.x.x/xx\"    TUN net\n"
+           "    -n  \"x.x.x.x/xx\"    dev name\n"
            "    -r  \"xxx\"           Request per second\n");
 }
 
@@ -147,68 +145,6 @@ static array_hashmap_bool ip_find_cmp(const void *find_elem_data, const void *ha
     return (*elem1 == IPs[*elem2].IP);
 }
 
-int32_t tun_alloc(char *dev, int32_t flags)
-{
-    struct ifreq ifr;
-    int32_t fd_create;
-    int32_t fd_setip;
-    int32_t err;
-    struct sockaddr_in sin;
-
-    if ((fd_create = open("/dev/net/tun", O_RDWR)) < 0) {
-        return fd_create;
-    }
-
-    memset(&ifr, 0, sizeof(ifr));
-    ifr.ifr_flags = flags;
-    strncpy(ifr.ifr_name, dev, IFNAMSIZ);
-
-    if ((err = ioctl(fd_create, TUNSETIFF, (void *)&ifr)) < 0) {
-        return err;
-    }
-
-    if ((fd_setip = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-        return fd_setip;
-    }
-
-    memset(&ifr, 0, sizeof(ifr));
-    strncpy(ifr.ifr_name, dev, IFNAMSIZ);
-
-    if ((err = ioctl(fd_setip, SIOCGIFFLAGS, &ifr)) < 0) {
-        return err;
-    }
-
-    if (!(ifr.ifr_flags & IFF_UP)) {
-        ifr.ifr_flags |= IFF_UP;
-        if ((err = ioctl(fd_setip, SIOCSIFFLAGS, &ifr)) < 0) {
-            return err;
-        }
-    }
-
-    memset(&sin, 0, sizeof(struct sockaddr_in));
-    sin.sin_family = AF_INET;
-    sin.sin_addr.s_addr = tun_ip;
-    memcpy(&ifr.ifr_addr, &sin, sizeof(struct sockaddr));
-
-    if ((err = ioctl(fd_setip, SIOCSIFADDR, &ifr)) < 0) {
-        return err;
-    }
-
-    memset(&ifr, 0, sizeof(ifr));
-    strncpy(ifr.ifr_name, dev, IFNAMSIZ);
-
-    memset(&sin, 0, sizeof(struct sockaddr_in));
-    sin.sin_family = AF_INET;
-    sin.sin_addr.s_addr = htonl(INADDR_NONE << (32 - tun_prefix) & INADDR_NONE);
-    memcpy(&ifr.ifr_netmask, &sin, sizeof(struct sockaddr));
-
-    if ((err = ioctl(fd_setip, SIOCSIFNETMASK, &ifr)) < 0) {
-        return err;
-    }
-
-    return fd_create;
-}
-
 static uint16_t checksum(char *buf, uint32_t size)
 {
     uint32_t sum = 0, i;
@@ -229,7 +165,7 @@ static uint16_t checksum(char *buf, uint32_t size)
     return ~sum;
 }
 
-void *read_TUN(__attribute__((unused)) void *arg)
+void *read_raw(__attribute__((unused)) void *arg)
 {
     char read_data[PACKET_MAX_SIZE];
     char write_data[PACKET_MAX_SIZE];
@@ -237,7 +173,7 @@ void *read_TUN(__attribute__((unused)) void *arg)
     char write_data_ack[sizeof(struct iphdr) + sizeof(struct tcphdr)];
 
     while (true) {
-        int32_t nread = read(tun_fd, read_data, PACKET_MAX_SIZE);
+        int32_t nread = read(raw_fd, read_data, PACKET_MAX_SIZE);
         if (nread < (int32_t)(sizeof(struct iphdr) + sizeof(struct tcphdr))) {
             continue;
         }
@@ -308,7 +244,7 @@ void *read_TUN(__attribute__((unused)) void *arg)
                     tcph_send->check = checksum_value;
                     iph_send->check = checksum(write_data_ack, iph_send->ihl << 2);
 
-                    write(tun_fd, write_data_ack, ntohs(iph_send->tot_len));
+                    write(raw_fd, write_data_ack, ntohs(iph_send->tot_len));
                 }
             }
         }
@@ -359,7 +295,7 @@ void *read_TUN(__attribute__((unused)) void *arg)
                 tcph_send->check = checksum_value;
                 iph_send->check = checksum(write_data_ack, iph_send->ihl << 2);
 
-                write(tun_fd, write_data_ack, ntohs(iph_send->tot_len));
+                write(raw_fd, write_data_ack, ntohs(iph_send->tot_len));
 
                 memset(write_data, 0, PACKET_MAX_SIZE);
 
@@ -418,7 +354,7 @@ void *read_TUN(__attribute__((unused)) void *arg)
                 tcph_send->check = checksum_value;
                 iph_send->check = checksum(write_data, iph_send->ihl << 2);
 
-                write(tun_fd, write_data, ntohs(iph_send->tot_len));
+                write(raw_fd, write_data, ntohs(iph_send->tot_len));
             }
         }
     }
@@ -426,7 +362,7 @@ void *read_TUN(__attribute__((unused)) void *arg)
     return NULL;
 }
 
-void *send_TUN(__attribute__((unused)) void *arg)
+void *send_raw(__attribute__((unused)) void *arg)
 {
     char write_data[sizeof(struct iphdr) + sizeof(struct tcphdr) + MSS_SIZE];
 
@@ -465,7 +401,7 @@ void *send_TUN(__attribute__((unused)) void *arg)
         iph->ttl = 128;
         iph->protocol = IPPROTO_TCP;
         iph->check = 0;
-        iph->saddr = htonl(ntohl(tun_ip) + port);
+        iph->saddr = dev_ip;
         iph->daddr = IPs[current_ips_num].IP;
 
         IPs[current_ips_num].status = 1;
@@ -501,7 +437,7 @@ void *send_TUN(__attribute__((unused)) void *arg)
         tcph->check = checksum_value;
         iph->check = checksum(write_data, iph->ihl << 2);
 
-        write(tun_fd, write_data, ntohs(iph->tot_len));
+        write(raw_fd, write_data, ntohs(iph->tot_len));
 
         usleep(1000000 / rps / coeff);
     }
@@ -544,6 +480,9 @@ int32_t main(int32_t argc, char *argv[])
     char IPs_file_path[PATH_MAX];
     memset(IPs_file_path, 0, PATH_MAX);
 
+    char dev_name[IFNAMSIZ];
+    memset(dev_name, 0, IFNAMSIZ);
+
     //Args
     {
         for (int32_t i = 1; i < argc; i++) {
@@ -569,16 +508,8 @@ int32_t main(int32_t argc, char *argv[])
             }
             if (!strcmp(argv[i], "-n")) {
                 if (i != argc - 1) {
-                    printf("  TUN      \"%s\"\n", argv[i + 1]);
-                    char *slash_ptr = strchr(argv[i + 1], '/');
-                    if (slash_ptr) {
-                        sscanf(slash_ptr + 1, "%u", &tun_prefix);
-                        *slash_ptr = 0;
-                        if (strlen(argv[i + 1]) < INET_ADDRSTRLEN) {
-                            tun_ip = inet_addr(argv[i + 1]);
-                        }
-                        *slash_ptr = '/';
-                    }
+                    printf("  Name     \"%s\"\n", argv[i + 1]);
+                    strcpy(dev_name, argv[i + 1]);
                     i++;
                 }
                 continue;
@@ -605,14 +536,9 @@ int32_t main(int32_t argc, char *argv[])
             errmsg("Programm need IPs file path\n");
         }
 
-        if (tun_ip == INADDR_NONE) {
+        if (dev_name[0] == 0) {
             print_help();
-            errmsg("The program need correct TUN IP\n");
-        }
-
-        if (tun_prefix == 0) {
-            print_help();
-            errmsg("The program need correct TUN prefix\n");
+            errmsg("Programm need dev name\n");
         }
 
         if (rps == 0) {
@@ -622,10 +548,19 @@ int32_t main(int32_t argc, char *argv[])
     }
     //Args
 
-    tun_fd = tun_alloc("Domains_Check", IFF_TUN | IFF_NO_PI);
-    if (tun_fd < 0) {
-        errmsg("Can't allocate TUN interface\n");
+    //Open socket
+    {
+        raw_fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+        if (raw_fd < 0) {
+            errmsg("Can't open a raw socket ETH_P_ALL\n");
+        }
+
+        int32_t ret = setsockopt(raw_fd, SOL_SOCKET, SO_BINDTODEVICE, dev_name, strlen(dev_name));
+        if (ret < 0) {
+            errmsg("Can't bind to device %s\n", dev_name);
+        }
     }
+    //Open socket
 
     char *domains_file_data = NULL;
 
@@ -668,8 +603,6 @@ int32_t main(int32_t argc, char *argv[])
     }
     //Domains read
 
-    char *IPs_file_data = NULL;
-
     //IPs read
     {
         FILE *IPs_fp = fopen(IPs_file_path, "r");
@@ -681,7 +614,7 @@ int32_t main(int32_t argc, char *argv[])
         int64_t IPs_file_size_add = ftell(IPs_fp);
         fseek(IPs_fp, 0, SEEK_SET);
 
-        IPs_file_data = (char *)malloc(IPs_file_size_add);
+        char *IPs_file_data = (char *)malloc(IPs_file_size_add);
 
         if (fread(IPs_file_data, sizeof(char), IPs_file_size_add, IPs_fp) !=
             (size_t)IPs_file_size_add) {
@@ -715,6 +648,8 @@ int32_t main(int32_t argc, char *argv[])
             IP_start = strchr(IP_start, 0) + 1;
         }
 
+        free(IPs_file_data);
+
         fclose(IPs_fp);
     }
     //IPs read
@@ -722,8 +657,16 @@ int32_t main(int32_t argc, char *argv[])
     printf("Domains count: %d\n", domains_count);
     printf("IPs count    : %d\n", IPs_count);
 
+    char buffer[BUFSIZ];
+    int32_t len;
+
+    while (1) {
+        len = recvfrom(raw_fd, buffer, sizeof(buffer), 0, NULL, 0);
+        printf("%d\n", len);
+    }
+
     pthread_t send_thread;
-    if (pthread_create(&send_thread, NULL, send_TUN, NULL)) {
+    if (pthread_create(&send_thread, NULL, send_raw, NULL)) {
         errmsg("Can't create send_thread\n");
     }
 
@@ -732,7 +675,7 @@ int32_t main(int32_t argc, char *argv[])
     }
 
     pthread_t read_thread;
-    if (pthread_create(&read_thread, NULL, read_TUN, NULL)) {
+    if (pthread_create(&read_thread, NULL, read_raw, NULL)) {
         errmsg("Can't create read_thread\n");
     }
 
@@ -772,25 +715,28 @@ int32_t main(int32_t argc, char *argv[])
         readed_old = readed;
     }
 
-    FILE *blocked_fp = fopen("blocked.txt", "w");
-    if (!blocked_fp) {
-        errmsg("Can't open file blocked.txt\n");
-    }
-
-    for (int32_t i = 0; i < domains_count; i++) {
-        if (domains[i].status <= TRY_COUNT / 3) {
-            fprintf(blocked_fp, "%d %s\n", domains[i].status, domains[i].domain);
+    //Write blocked
+    {
+        FILE *blocked_fp = fopen("blocked.txt", "w");
+        if (!blocked_fp) {
+            errmsg("Can't open file blocked.txt\n");
         }
+
+        for (int32_t i = 0; i < domains_count; i++) {
+            if (domains[i].status <= TRY_COUNT / 3) {
+                fprintf(blocked_fp, "%d %s\n", domains[i].status, domains[i].domain);
+            }
+        }
+
+        fclose(blocked_fp);
     }
+    //Write blocked
 
-    fclose(blocked_fp);
-
-    close(tun_fd);
+    close(raw_fd);
 
     free(domains_file_data);
     free(domains);
 
-    free(IPs_file_data);
     free(IPs);
 
     array_hashmap_del(&ip_map_struct);
