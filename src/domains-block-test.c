@@ -9,7 +9,10 @@ volatile int32_t sended;
 volatile int32_t readed;
 
 int32_t raw_fd = 0;
-uint32_t dev_ip = 0;
+
+unsigned char dev_mac[6];
+unsigned char gateway_mac[6];
+uint32_t dev_ip;
 
 array_hashmap_t ip_map_struct;
 
@@ -459,7 +462,7 @@ static void main_catch_function(int32_t signo)
 #define STRLEN(s) ((sizeof(s) / sizeof(s[0])) - 1)
 #define ETH_STRLEN STRLEN("00:11:22:33:44:55")
 
-static void eth_bin2str(const unsigned char *src, char *dst)
+static void eth_bin2str(unsigned char *src, char *dst)
 {
     sprintf(dst, "%02x:%02x:%02x:%02x:%02x:%02x", (unsigned int)src[0], (unsigned int)src[1],
             (unsigned int)src[2], (unsigned int)src[3], (unsigned int)src[4], (unsigned int)src[5]);
@@ -578,9 +581,7 @@ int32_t main(int32_t argc, char *argv[])
         if (ret < 0) {
             errmsg("Can't get mac address of interface %s\n", dev_name);
         }
-        char dev_src[ETH_STRLEN + 1];
-        eth_bin2str((const unsigned char *)ifreq.ifr_hwaddr.sa_data, dev_src);
-        printf("dev_src_mac %s\n", dev_src);
+        memcpy(dev_mac, ifreq.ifr_hwaddr.sa_data, 6);
 
         memset(&ifreq, 0, sizeof(ifreq));
         strcpy(ifreq.ifr_name, dev_name);
@@ -590,10 +591,15 @@ int32_t main(int32_t argc, char *argv[])
             errmsg("Can't get ip address of interface %s\n", dev_name);
         }
         struct sockaddr_in sin;
-        memset(&sin, 0, sizeof(struct sockaddr_in));
         memcpy(&sin, &ifreq.ifr_addr, sizeof(struct sockaddr));
+        dev_ip = sin.sin_addr.s_addr;
+
+        char dev_src[ETH_STRLEN + 1];
+        eth_bin2str(dev_mac, dev_src);
+        printf("dev_src_mac %s\n", dev_src);
+
         struct in_addr src_ip_s;
-        src_ip_s.s_addr = sin.sin_addr.s_addr;
+        src_ip_s.s_addr = dev_ip;
         printf("dev_src_ip %s\n", inet_ntoa(src_ip_s));
     }
     //Open socket
