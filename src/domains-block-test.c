@@ -564,10 +564,37 @@ int32_t main(int32_t argc, char *argv[])
             errmsg("Can't open a raw socket ETH_P_ALL\n");
         }
 
-        int32_t ret = setsockopt(raw_fd, SOL_SOCKET, SO_BINDTODEVICE, dev_name, strlen(dev_name));
+        int32_t ret = 0;
+        ret = setsockopt(raw_fd, SOL_SOCKET, SO_BINDTODEVICE, dev_name, strlen(dev_name));
         if (ret < 0) {
             errmsg("Can't bind to device %s\n", dev_name);
         }
+
+        struct ifreq ifreq;
+        memset(&ifreq, 0, sizeof(ifreq));
+        strcpy(ifreq.ifr_name, dev_name);
+
+        ret = ioctl(raw_fd, SIOCGIFHWADDR, &ifreq);
+        if (ret < 0) {
+            errmsg("Can't get mac address of interface %s\n", dev_name);
+        }
+        char dev_src[ETH_STRLEN + 1];
+        eth_bin2str((const unsigned char *)ifreq.ifr_hwaddr.sa_data, dev_src);
+        printf("dev_src_mac %s\n", dev_src);
+
+        memset(&ifreq, 0, sizeof(ifreq));
+        strcpy(ifreq.ifr_name, dev_name);
+
+        ret = ioctl(raw_fd, SIOCGIFADDR, &ifreq);
+        if (ret < 0) {
+            errmsg("Can't get ip address of interface %s\n", dev_name);
+        }
+        struct sockaddr_in sin;
+        memset(&sin, 0, sizeof(struct sockaddr_in));
+        memcpy(&sin, &ifreq.ifr_addr, sizeof(struct sockaddr));
+        struct in_addr src_ip_s;
+        src_ip_s.s_addr = sin.sin_addr.s_addr;
+        printf("dev_src_ip %s\n", inet_ntoa(src_ip_s));
     }
     //Open socket
 
