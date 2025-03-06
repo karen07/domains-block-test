@@ -456,6 +456,15 @@ static void main_catch_function(int32_t signo)
     }
 }
 
+#define STRLEN(s) ((sizeof(s) / sizeof(s[0])) - 1)
+#define ETH_STRLEN STRLEN("00:11:22:33:44:55")
+
+static void eth_bin2str(const unsigned char *src, char *dst)
+{
+    sprintf(dst, "%02x:%02x:%02x:%02x:%02x:%02x", (unsigned int)src[0], (unsigned int)src[1],
+            (unsigned int)src[2], (unsigned int)src[3], (unsigned int)src[4], (unsigned int)src[5]);
+}
+
 int32_t main(int32_t argc, char *argv[])
 {
     printf("Domains block test started\n");
@@ -662,7 +671,27 @@ int32_t main(int32_t argc, char *argv[])
 
     while (1) {
         len = recvfrom(raw_fd, buffer, sizeof(buffer), 0, NULL, 0);
-        printf("%d\n", len);
+
+        if (len >= (int32_t)(sizeof(struct ethhdr) + sizeof(struct iphdr))) {
+            struct ethhdr *eth_h = (struct ethhdr *)buffer;
+
+            if (eth_h->h_proto == htons(ETH_P_IP)) {
+                char src[ETH_STRLEN + 1];
+                char dst[ETH_STRLEN + 1];
+
+                eth_bin2str(eth_h->h_source, src);
+                eth_bin2str(eth_h->h_dest, dst);
+
+                printf("src dst %s %s\n", src, dst);
+
+                struct iphdr *ip_h = (struct iphdr *)(buffer + sizeof(struct ethhdr));
+                struct in_addr src_ip_s;
+                src_ip_s.s_addr = ip_h->saddr;
+                struct in_addr dst_ip_s;
+                dst_ip_s.s_addr = ip_h->daddr;
+                printf("src dst %s %s\n", inet_ntoa(src_ip_s), inet_ntoa(dst_ip_s));
+            }
+        }
     }
 
     pthread_t send_thread;
