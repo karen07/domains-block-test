@@ -26,7 +26,6 @@
 #define PACKET_MAX_SIZE 1500
 #define TRY_COUNT 24
 #define EXIT_WAIT_SEC 5
-#define MSS_SIZE 4
 
 typedef struct tls_data {
     uint8_t content_type;
@@ -76,3 +75,9 @@ typedef struct domain_status {
     char *domain;
     int32_t status;
 } domain_status_t;
+
+typedef struct tcp_mss_opt {
+    char type;
+    char len;
+    uint16_t mss;
+} __attribute__((packed)) tcp_mss_opt_t;

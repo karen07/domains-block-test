@@ -168,6 +168,29 @@ static uint16_t checksum(char *buf, uint32_t size)
     return ~sum;
 }
 
+static void tcp_checksum(struct iphdr *iph)
+{
+    struct tcphdr *tcph = (struct tcphdr *)((char *)iph + sizeof(*iph));
+
+    uint16_t L4_len = ntohs(iph->tot_len) - (iph->ihl << 2);
+
+    pseudo_header_t psh;
+    psh.source_address = iph->saddr;
+    psh.dest_address = iph->daddr;
+    psh.protocol = htons(IPPROTO_TCP);
+    psh.length = htons(L4_len);
+
+    char pseudogram[PACKET_MAX_SIZE];
+    memcpy(pseudogram, (char *)&psh, sizeof(pseudo_header_t));
+    memcpy(pseudogram + sizeof(pseudo_header_t), tcph, L4_len);
+
+    int32_t psize = sizeof(pseudo_header_t) + L4_len;
+    uint16_t checksum_value = checksum(pseudogram, psize);
+
+    tcph->check = checksum_value;
+    iph->check = checksum((char *)iph, iph->ihl << 2);
+}
+
 void *read_raw(__attribute__((unused)) void *arg)
 {
     char read_data[PACKET_MAX_SIZE];
@@ -367,7 +390,10 @@ void *read_raw(__attribute__((unused)) void *arg)
 
 void *send_raw(__attribute__((unused)) void *arg)
 {
-    char write_data[sizeof(struct iphdr) + sizeof(struct tcphdr) + MSS_SIZE];
+    const int32_t all_size = sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr) +
+                             sizeof(tcp_mss_opt_t);
+
+    char write_data[all_size];
 
     uint16_t port = 0;
 
@@ -392,13 +418,18 @@ void *send_raw(__attribute__((unused)) void *arg)
             port = 1000;
         }
 
-        memset(write_data, 0, sizeof(struct iphdr) + sizeof(struct tcphdr) + MSS_SIZE);
+        memset(write_data, 0, all_size);
 
-        struct iphdr *iph = (struct iphdr *)write_data;
+        struct ethhdr *eth_h = (struct ethhdr *)write_data;
+        eth_h->h_proto = htons(ETH_P_IP);
+        memcpy(&eth_h->h_dest, gateway_mac, ETH_ALEN);
+        memcpy(&eth_h->h_source, dev_mac, ETH_ALEN);
+
+        struct iphdr *iph = (struct iphdr *)((char *)eth_h + sizeof(*eth_h));
         iph->version = 4;
         iph->ihl = sizeof(struct iphdr) / 4;
         iph->tos = 0;
-        iph->tot_len = htons(sizeof(struct iphdr) + sizeof(struct tcphdr) + MSS_SIZE);
+        iph->tot_len = htons(sizeof(struct iphdr) + sizeof(struct tcphdr) + sizeof(tcp_mss_opt_t));
         iph->id = 0;
         iph->frag_off = htons(0x4000);
         iph->ttl = 128;
@@ -409,36 +440,24 @@ void *send_raw(__attribute__((unused)) void *arg)
 
         IPs[current_ips_num].status = 1;
 
-        struct tcphdr *tcph = (struct tcphdr *)(write_data + sizeof(struct iphdr));
+        struct tcphdr *tcph = (struct tcphdr *)((char *)iph + sizeof(*iph));
         tcph->source = htons(port++);
         tcph->dest = htons(PORT_TLS);
         tcph->seq = rand();
         tcph->ack_seq = 0;
         tcph->res1 = 0;
-        tcph->doff = (sizeof(struct tcphdr) + MSS_SIZE) / 4;
+        tcph->doff = (sizeof(struct tcphdr) + sizeof(tcp_mss_opt_t)) / 4;
         tcph->syn = 1;
         tcph->window = 0xffff;
         tcph->check = 0;
         tcph->urg_ptr = 0;
 
-        char *tcp_opt_ptr = write_data + sizeof(struct iphdr) + sizeof(struct tcphdr);
-        tcp_opt_ptr[0] = 2;
-        tcp_opt_ptr[1] = 4;
-        *((uint16_t *)(&tcp_opt_ptr[2])) = htons(1400);
+        tcp_mss_opt_t *tcp_opt_ptr = (tcp_mss_opt_t *)((char *)tcph + sizeof(*tcph));
+        tcp_opt_ptr->type = TCP_MAXSEG;
+        tcp_opt_ptr->len = sizeof(tcp_mss_opt_t);
+        tcp_opt_ptr->mss = htons(1400);
 
-        uint16_t L4_len = ntohs(iph->tot_len) - (iph->ihl << 2);
-        pseudo_header_t psh;
-        psh.source_address = iph->saddr;
-        psh.dest_address = iph->daddr;
-        psh.protocol = htons(IPPROTO_TCP);
-        psh.length = htons(L4_len);
-        char pseudogram[PACKET_MAX_SIZE];
-        memcpy(pseudogram, (char *)&psh, sizeof(pseudo_header_t));
-        memcpy(pseudogram + sizeof(pseudo_header_t), write_data + sizeof(struct iphdr), L4_len);
-        int32_t psize = sizeof(pseudo_header_t) + L4_len;
-        uint16_t checksum_value = checksum(pseudogram, psize);
-        tcph->check = checksum_value;
-        iph->check = checksum(write_data, iph->ihl << 2);
+        tcp_checksum(iph);
 
         //write(raw_fd, write_data, ntohs(iph->tot_len));
 
@@ -740,17 +759,21 @@ int32_t main(int32_t argc, char *argv[])
         }
     }
 
-    char dev_src[ETH_STRLEN + 1];
-    eth_bin2str(dev_mac, dev_src);
-    printf("dev_mac %s\n", dev_src);
+    //Print mac and ip
+    {
+        char dev_src[ETH_STRLEN + 1];
+        eth_bin2str(dev_mac, dev_src);
+        printf("dev_mac %s\n", dev_src);
 
-    char gateway_src[ETH_STRLEN + 1];
-    eth_bin2str(gateway_mac, gateway_src);
-    printf("gateway_mac %s\n", gateway_src);
+        char gateway_src[ETH_STRLEN + 1];
+        eth_bin2str(gateway_mac, gateway_src);
+        printf("gateway_mac %s\n", gateway_src);
 
-    struct in_addr src_ip_s;
-    src_ip_s.s_addr = dev_ip;
-    printf("dev_src_ip %s\n", inet_ntoa(src_ip_s));
+        struct in_addr src_ip_s;
+        src_ip_s.s_addr = dev_ip;
+        printf("dev_src_ip %s\n", inet_ntoa(src_ip_s));
+    }
+    //Print mac and ip
 
     pthread_t send_thread;
     if (pthread_create(&send_thread, NULL, send_raw, NULL)) {
