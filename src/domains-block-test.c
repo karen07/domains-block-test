@@ -472,9 +472,6 @@ static void main_catch_function(int32_t signo)
     }
 }
 
-#define STRLEN(s) ((sizeof(s) / sizeof(s[0])) - 1)
-#define ETH_STRLEN STRLEN("00:11:22:33:44:55")
-
 static void eth_bin2str(unsigned char *src, char *dst)
 {
     sprintf(dst, "%02x:%02x:%02x:%02x:%02x:%02x", (unsigned int)src[0], (unsigned int)src[1],

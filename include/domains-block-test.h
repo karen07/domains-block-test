@@ -27,6 +27,9 @@
 #define TRY_COUNT 24
 #define EXIT_WAIT_SEC 5
 
+#define STRLEN(s) ((sizeof(s) / sizeof(s[0])) - 1)
+#define ETH_STRLEN STRLEN("00:11:22:33:44:55")
+
 typedef struct tls_data {
     uint8_t content_type;
     uint16_t tls_version;
