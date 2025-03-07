@@ -4,6 +4,7 @@ uint32_t rps;
 double coeff = 1;
 
 volatile int32_t keep_sending = 1;
+volatile int32_t keep_reading = 1;
 
 volatile int32_t sended;
 volatile int32_t readed;
@@ -193,7 +194,7 @@ static void tcp_checksum(struct iphdr *iph)
 
 void *read_raw(__attribute__((unused)) void *arg)
 {
-    while (true) {
+    while (keep_reading) {
         struct pcap_pkthdr read_header;
         memset(&read_header, 0, sizeof(struct pcap_pkthdr));
 
@@ -831,6 +832,10 @@ int32_t main(int32_t argc, char *argv[])
             sended_old = sended;
             readed_old = readed;
         }
+
+        keep_reading = 0;
+
+        sleep(5);
     }
     //Stat
 
@@ -853,6 +858,8 @@ int32_t main(int32_t argc, char *argv[])
 
     //Free
     {
+        pcap_close(handle);
+
         free(domains);
 
         free(IPs);
