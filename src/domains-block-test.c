@@ -468,40 +468,6 @@ static void eth_bin2str(unsigned char *src, char *dst)
             (unsigned int)src[2], (unsigned int)src[3], (unsigned int)src[4], (unsigned int)src[5]);
 }
 
-void callback(__attribute__((unused)) u_char *useless,
-              __attribute__((unused)) const struct pcap_pkthdr *pkthdr, const u_char *packet)
-{
-    if (pkthdr->len < (int32_t)(sizeof(struct ethhdr) + sizeof(struct iphdr))) {
-        return;
-    }
-
-    struct ethhdr *eth_h = (struct ethhdr *)packet;
-
-    if (eth_h->h_proto != htons(ETH_P_IP)) {
-        return;
-    }
-
-    char src[ETH_STRLEN + 1];
-    eth_bin2str(eth_h->h_source, src);
-
-    char dst[ETH_STRLEN + 1];
-    eth_bin2str(eth_h->h_dest, dst);
-
-    //if (memcpy(dev_mac, eth_h->h_source, 6)) {
-    //    printf("src %s\n", src);
-    //}
-
-    struct iphdr *ip_h = (struct iphdr *)(packet + sizeof(struct ethhdr));
-
-    struct in_addr src_ip_s;
-    src_ip_s.s_addr = ip_h->saddr;
-
-    struct in_addr dst_ip_s;
-    dst_ip_s.s_addr = ip_h->daddr;
-
-    printf("src dst %s %s\n", inet_ntoa(src_ip_s), inet_ntoa(dst_ip_s));
-}
-
 int32_t main(int32_t argc, char *argv[])
 {
     printf("Domains block test started\n");
@@ -736,7 +702,42 @@ int32_t main(int32_t argc, char *argv[])
     printf("Domains count: %d\n", domains_count);
     printf("IPs count    : %d\n", IPs_count);
 
-    pcap_loop(handle, 0, callback, NULL);
+    struct pcap_pkthdr header;
+    const u_char *packet;
+
+    while (true) {
+        packet = pcap_next(handle, &header);
+
+        if (header.len < (int32_t)(sizeof(struct ethhdr) + sizeof(struct iphdr))) {
+            continue;
+        }
+
+        struct ethhdr *eth_h = (struct ethhdr *)packet;
+
+        if (eth_h->h_proto != htons(ETH_P_IP)) {
+            continue;
+        }
+
+        char src[ETH_STRLEN + 1];
+        eth_bin2str(eth_h->h_source, src);
+
+        char dst[ETH_STRLEN + 1];
+        eth_bin2str(eth_h->h_dest, dst);
+
+        //if (memcpy(dev_mac, eth_h->h_source, 6)) {
+        //    printf("src %s\n", src);
+        //}
+
+        struct iphdr *ip_h = (struct iphdr *)(packet + sizeof(struct ethhdr));
+
+        struct in_addr src_ip_s;
+        src_ip_s.s_addr = ip_h->saddr;
+
+        struct in_addr dst_ip_s;
+        dst_ip_s.s_addr = ip_h->daddr;
+
+        printf("src dst %s %s\n", inet_ntoa(src_ip_s), inet_ntoa(dst_ip_s));
+    }
 
     pthread_t send_thread;
     if (pthread_create(&send_thread, NULL, send_raw, NULL)) {
