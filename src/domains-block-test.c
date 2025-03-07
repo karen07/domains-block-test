@@ -8,7 +8,7 @@ volatile int32_t keep_sending = 1;
 volatile int32_t sended;
 volatile int32_t readed;
 
-int32_t raw_fd = 0;
+pcap_t *handle;
 
 unsigned char dev_mac[6];
 unsigned char gateway_mac[6];
@@ -176,10 +176,10 @@ void *read_raw(__attribute__((unused)) void *arg)
     char write_data_ack[sizeof(struct iphdr) + sizeof(struct tcphdr)];
 
     while (true) {
-        int32_t nread = read(raw_fd, read_data, PACKET_MAX_SIZE);
-        if (nread < (int32_t)(sizeof(struct iphdr) + sizeof(struct tcphdr))) {
-            continue;
-        }
+        //int32_t nread = read(raw_fd, read_data, PACKET_MAX_SIZE);
+        //if (nread < (int32_t)(sizeof(struct iphdr) + sizeof(struct tcphdr))) {
+        //    continue;
+        //}
 
         struct iphdr *iph_read = (struct iphdr *)read_data;
         if (iph_read->protocol != IPPROTO_TCP) {
@@ -247,7 +247,7 @@ void *read_raw(__attribute__((unused)) void *arg)
                     tcph_send->check = checksum_value;
                     iph_send->check = checksum(write_data_ack, iph_send->ihl << 2);
 
-                    write(raw_fd, write_data_ack, ntohs(iph_send->tot_len));
+                    //write(raw_fd, write_data_ack, ntohs(iph_send->tot_len));
                 }
             }
         }
@@ -298,7 +298,7 @@ void *read_raw(__attribute__((unused)) void *arg)
                 tcph_send->check = checksum_value;
                 iph_send->check = checksum(write_data_ack, iph_send->ihl << 2);
 
-                write(raw_fd, write_data_ack, ntohs(iph_send->tot_len));
+                //write(raw_fd, write_data_ack, ntohs(iph_send->tot_len));
 
                 memset(write_data, 0, PACKET_MAX_SIZE);
 
@@ -357,7 +357,7 @@ void *read_raw(__attribute__((unused)) void *arg)
                 tcph_send->check = checksum_value;
                 iph_send->check = checksum(write_data, iph_send->ihl << 2);
 
-                write(raw_fd, write_data, ntohs(iph_send->tot_len));
+                //write(raw_fd, write_data, ntohs(iph_send->tot_len));
             }
         }
     }
@@ -440,7 +440,7 @@ void *send_raw(__attribute__((unused)) void *arg)
         tcph->check = checksum_value;
         iph->check = checksum(write_data, iph->ihl << 2);
 
-        write(raw_fd, write_data, ntohs(iph->tot_len));
+        //write(raw_fd, write_data, ntohs(iph->tot_len));
 
         usleep(1000000 / rps / coeff);
     }
@@ -466,6 +466,40 @@ static void eth_bin2str(unsigned char *src, char *dst)
 {
     sprintf(dst, "%02x:%02x:%02x:%02x:%02x:%02x", (unsigned int)src[0], (unsigned int)src[1],
             (unsigned int)src[2], (unsigned int)src[3], (unsigned int)src[4], (unsigned int)src[5]);
+}
+
+void callback(__attribute__((unused)) u_char *useless,
+              __attribute__((unused)) const struct pcap_pkthdr *pkthdr, const u_char *packet)
+{
+    if (pkthdr->len < (int32_t)(sizeof(struct ethhdr) + sizeof(struct iphdr))) {
+        return;
+    }
+
+    struct ethhdr *eth_h = (struct ethhdr *)packet;
+
+    if (eth_h->h_proto != htons(ETH_P_IP)) {
+        return;
+    }
+
+    char src[ETH_STRLEN + 1];
+    eth_bin2str(eth_h->h_source, src);
+
+    char dst[ETH_STRLEN + 1];
+    eth_bin2str(eth_h->h_dest, dst);
+
+    //if (memcpy(dev_mac, eth_h->h_source, 6)) {
+    //    printf("src %s\n", src);
+    //}
+
+    struct iphdr *ip_h = (struct iphdr *)(packet + sizeof(struct ethhdr));
+
+    struct in_addr src_ip_s;
+    src_ip_s.s_addr = ip_h->saddr;
+
+    struct in_addr dst_ip_s;
+    dst_ip_s.s_addr = ip_h->daddr;
+
+    printf("src dst %s %s\n", inet_ntoa(src_ip_s), inet_ntoa(dst_ip_s));
 }
 
 int32_t main(int32_t argc, char *argv[])
@@ -562,21 +596,24 @@ int32_t main(int32_t argc, char *argv[])
 
     //Open socket
     {
-        raw_fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
-        if (raw_fd < 0) {
-            errmsg("Can't open a raw socket ETH_P_ALL\n");
-        }
+        char errbuf[PCAP_ERRBUF_SIZE];
 
-        int32_t ret = 0;
-        ret = setsockopt(raw_fd, SOL_SOCKET, SO_BINDTODEVICE, dev_name, strlen(dev_name));
-        if (ret < 0) {
-            errmsg("Can't bind to device %s\n", dev_name);
+        handle = pcap_open_live(dev_name, BUFSIZ, 0, 1, errbuf);
+        if (handle == NULL) {
+            errmsg("Can't open device %s: %s\n", dev_name, errbuf);
         }
 
         struct ifreq ifreq;
         memset(&ifreq, 0, sizeof(ifreq));
         strcpy(ifreq.ifr_name, dev_name);
 
+        int32_t raw_fd;
+        raw_fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+        if (raw_fd < 0) {
+            errmsg("Can't open a raw socket ETH_P_ALL\n");
+        }
+
+        int32_t ret;
         ret = ioctl(raw_fd, SIOCGIFHWADDR, &ifreq);
         if (ret < 0) {
             errmsg("Can't get mac address of interface %s\n", dev_name);
@@ -699,35 +736,7 @@ int32_t main(int32_t argc, char *argv[])
     printf("Domains count: %d\n", domains_count);
     printf("IPs count    : %d\n", IPs_count);
 
-    char buffer[BUFSIZ];
-    int32_t len;
-
-    while (1) {
-        len = recvfrom(raw_fd, buffer, sizeof(buffer), 0, NULL, 0);
-
-        if (len >= (int32_t)(sizeof(struct ethhdr) + sizeof(struct iphdr))) {
-            struct ethhdr *eth_h = (struct ethhdr *)buffer;
-
-            if (eth_h->h_proto == htons(ETH_P_IP)) {
-                char src[ETH_STRLEN + 1];
-                char dst[ETH_STRLEN + 1];
-
-                eth_bin2str(eth_h->h_source, src);
-                eth_bin2str(eth_h->h_dest, dst);
-
-                if (memcpy(dev_mac, eth_h->h_source, 6)) {
-                    printf("src %s\n", src);
-                }
-
-                /*struct iphdr *ip_h = (struct iphdr *)(buffer + sizeof(struct ethhdr));
-                struct in_addr src_ip_s;
-                src_ip_s.s_addr = ip_h->saddr;
-                struct in_addr dst_ip_s;
-                dst_ip_s.s_addr = ip_h->daddr;
-                printf("src dst %s %s\n", inet_ntoa(src_ip_s), inet_ntoa(dst_ip_s));*/
-            }
-        }
-    }
+    pcap_loop(handle, 0, callback, NULL);
 
     pthread_t send_thread;
     if (pthread_create(&send_thread, NULL, send_raw, NULL)) {
@@ -795,8 +804,6 @@ int32_t main(int32_t argc, char *argv[])
         fclose(blocked_fp);
     }
     //Write blocked
-
-    close(raw_fd);
 
     free(domains_file_data);
     free(domains);
