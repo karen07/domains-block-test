@@ -324,7 +324,6 @@ void *read_raw(__attribute__((unused)) void *arg)
                     int32_t payload_size = 0;
                     payload_size =
                         tls_client_hello(write_data + all_size_ack, domains[domains_index].domain);
-                    printf("%s\n", domains[domains_index].domain);
                     IPs[res_elem].domain = domains_index;
                     domains_index++;
 
@@ -814,7 +813,7 @@ int32_t main(int32_t argc, char *argv[])
             printf("%08d %08d %06d %06d\n", sended - sended_old, readed - readed_old, sended,
                    readed);
 
-            if (readed == readed_old) {
+            if ((readed - readed_old) < 100) {
                 exit_wait++;
             } else {
                 exit_wait = 0;
