@@ -10,8 +10,8 @@ volatile int32_t readed;
 
 pcap_t *handle;
 
-unsigned char dev_mac[6];
-unsigned char gateway_mac[6];
+unsigned char dev_mac[ETH_ALEN];
+unsigned char gateway_mac[ETH_ALEN];
 uint32_t dev_ip;
 
 array_hashmap_t ip_map_struct;
@@ -116,7 +116,7 @@ void print_help(void)
            "  Required parameters:\n"
            "    -f  \"/example.txt\"  Domains file path\n"
            "    -i  \"/example.txt\"  IPs file path\n"
-           "    -n  \"x.x.x.x/xx\"    dev name\n"
+           "    -n  \"test\"          Dev name\n"
            "    -r  \"xxx\"           Request per second\n");
 }
 
@@ -560,55 +560,6 @@ int32_t main(int32_t argc, char *argv[])
     }
     //Args
 
-    //Open socket
-    {
-        char errbuf[PCAP_ERRBUF_SIZE];
-
-        handle = pcap_open_live(dev_name, BUFSIZ, 0, 1, errbuf);
-        if (handle == NULL) {
-            errmsg("Can't open device %s: %s\n", dev_name, errbuf);
-        }
-
-        struct ifreq ifreq;
-        memset(&ifreq, 0, sizeof(ifreq));
-        strcpy(ifreq.ifr_name, dev_name);
-
-        int32_t raw_fd;
-        raw_fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
-        if (raw_fd < 0) {
-            errmsg("Can't open a raw socket ETH_P_ALL\n");
-        }
-
-        int32_t ret;
-        ret = ioctl(raw_fd, SIOCGIFHWADDR, &ifreq);
-        if (ret < 0) {
-            errmsg("Can't get mac address of interface %s\n", dev_name);
-        }
-        memcpy(dev_mac, ifreq.ifr_hwaddr.sa_data, 6);
-
-        memset(&ifreq, 0, sizeof(ifreq));
-        strcpy(ifreq.ifr_name, dev_name);
-
-        ret = ioctl(raw_fd, SIOCGIFADDR, &ifreq);
-        if (ret < 0) {
-            errmsg("Can't get ip address of interface %s\n", dev_name);
-        }
-        struct sockaddr_in sin;
-        memcpy(&sin, &ifreq.ifr_addr, sizeof(struct sockaddr));
-        dev_ip = sin.sin_addr.s_addr;
-
-        char dev_src[ETH_STRLEN + 1];
-        eth_bin2str(dev_mac, dev_src);
-        printf("dev_src_mac %s\n", dev_src);
-
-        struct in_addr src_ip_s;
-        src_ip_s.s_addr = dev_ip;
-        printf("dev_src_ip %s\n", inet_ntoa(src_ip_s));
-    }
-    //Open socket
-
-    char *domains_file_data = NULL;
-
     //Domains read
     {
         FILE *domains_fp = fopen(domains_file_path, "r");
@@ -620,7 +571,7 @@ int32_t main(int32_t argc, char *argv[])
         int64_t domains_file_size_add = ftell(domains_fp);
         fseek(domains_fp, 0, SEEK_SET);
 
-        domains_file_data = (char *)malloc(domains_file_size_add);
+        char *domains_file_data = (char *)malloc(domains_file_size_add);
 
         if (fread(domains_file_data, sizeof(char), domains_file_size_add, domains_fp) !=
             (size_t)domains_file_size_add) {
@@ -702,6 +653,45 @@ int32_t main(int32_t argc, char *argv[])
     printf("Domains count: %d\n", domains_count);
     printf("IPs count    : %d\n", IPs_count);
 
+    //Open socket
+    {
+        char errbuf[PCAP_ERRBUF_SIZE];
+
+        handle = pcap_open_live(dev_name, BUFSIZ, 0, 1, errbuf);
+        if (handle == NULL) {
+            errmsg("Can't open device %s: %s\n", dev_name, errbuf);
+        }
+
+        struct ifreq ifreq;
+        memset(&ifreq, 0, sizeof(ifreq));
+        strcpy(ifreq.ifr_name, dev_name);
+
+        int32_t raw_fd;
+        raw_fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+        if (raw_fd < 0) {
+            errmsg("Can't open a raw socket ETH_P_ALL\n");
+        }
+
+        int32_t ret;
+        ret = ioctl(raw_fd, SIOCGIFHWADDR, &ifreq);
+        if (ret < 0) {
+            errmsg("Can't get mac address of interface %s\n", dev_name);
+        }
+        memcpy(dev_mac, ifreq.ifr_hwaddr.sa_data, ETH_ALEN);
+
+        memset(&ifreq, 0, sizeof(ifreq));
+        strcpy(ifreq.ifr_name, dev_name);
+
+        ret = ioctl(raw_fd, SIOCGIFADDR, &ifreq);
+        if (ret < 0) {
+            errmsg("Can't get ip address of interface %s\n", dev_name);
+        }
+        struct sockaddr_in sin;
+        memcpy(&sin, &ifreq.ifr_addr, sizeof(struct sockaddr));
+        dev_ip = sin.sin_addr.s_addr;
+    }
+    //Open socket
+
     struct pcap_pkthdr header;
     const u_char *packet;
 
@@ -724,10 +714,6 @@ int32_t main(int32_t argc, char *argv[])
         char dst[ETH_STRLEN + 1];
         eth_bin2str(eth_h->h_dest, dst);
 
-        //if (memcpy(dev_mac, eth_h->h_source, 6)) {
-        //    printf("src %s\n", src);
-        //}
-
         struct iphdr *ip_h = (struct iphdr *)(packet + sizeof(struct ethhdr));
 
         struct in_addr src_ip_s;
@@ -736,8 +722,35 @@ int32_t main(int32_t argc, char *argv[])
         struct in_addr dst_ip_s;
         dst_ip_s.s_addr = ip_h->daddr;
 
-        printf("src dst %s %s\n", inet_ntoa(src_ip_s), inet_ntoa(dst_ip_s));
+        printf("\n");
+        printf("%s\n", src);
+        printf("%s\n", dst);
+        printf("%s\n", inet_ntoa(src_ip_s));
+        printf("%s\n", inet_ntoa(dst_ip_s));
+        printf("\n");
+
+        if (memcmp(dev_mac, eth_h->h_source, ETH_ALEN)) {
+            memcpy(gateway_mac, eth_h->h_source, ETH_ALEN);
+            break;
+        }
+
+        if (memcmp(dev_mac, eth_h->h_dest, ETH_ALEN)) {
+            memcpy(gateway_mac, eth_h->h_dest, ETH_ALEN);
+            break;
+        }
     }
+
+    char dev_src[ETH_STRLEN + 1];
+    eth_bin2str(dev_mac, dev_src);
+    printf("dev_mac %s\n", dev_src);
+
+    char gateway_src[ETH_STRLEN + 1];
+    eth_bin2str(gateway_mac, gateway_src);
+    printf("gateway_mac %s\n", gateway_src);
+
+    struct in_addr src_ip_s;
+    src_ip_s.s_addr = dev_ip;
+    printf("dev_src_ip %s\n", inet_ntoa(src_ip_s));
 
     pthread_t send_thread;
     if (pthread_create(&send_thread, NULL, send_raw, NULL)) {
@@ -806,7 +819,6 @@ int32_t main(int32_t argc, char *argv[])
     }
     //Write blocked
 
-    free(domains_file_data);
     free(domains);
 
     free(IPs);
