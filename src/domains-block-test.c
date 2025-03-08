@@ -23,7 +23,7 @@ domain_status_t *domains = NULL;
 int32_t domains_index = 0;
 
 int32_t IPs_count = 0;
-conn_data_t *IPs = NULL;
+uint32_t *IPs = NULL;
 
 int32_t try_count = 0;
 
@@ -121,32 +121,28 @@ void print_help(void)
            "    -r  \"xxx\"           Request per second\n");
 }
 
+uint32_t djb33_hash_len(const char *s, size_t len)
+{
+    uint32_t h = 5381;
+    while (*s && len--) {
+        h += (h << 5);
+        h ^= *s++;
+    }
+    return h;
+}
+
 static array_hashmap_hash ip_add_hash(const void *add_elem_data)
 {
-    const uint32_t *elem = add_elem_data;
-    return IPs[*elem].IP;
+    const conn_data_t *elem = add_elem_data;
+    return djb33_hash_len((char *)&elem->IP, sizeof(elem->IP) + sizeof(elem->port));
 }
 
 static array_hashmap_bool ip_add_cmp(const void *add_elem_data, const void *hashmap_elem_data)
 {
-    const uint32_t *elem1 = add_elem_data;
-    const uint32_t *elem2 = hashmap_elem_data;
+    const conn_data_t *elem1 = add_elem_data;
+    const conn_data_t *elem2 = hashmap_elem_data;
 
-    return (IPs[*elem1].IP == IPs[*elem2].IP);
-}
-
-static array_hashmap_hash ip_find_hash(const void *find_elem_data)
-{
-    const uint32_t *elem = find_elem_data;
-    return *elem;
-}
-
-static array_hashmap_bool ip_find_cmp(const void *find_elem_data, const void *hashmap_elem_data)
-{
-    const uint32_t *elem1 = find_elem_data;
-    const uint32_t *elem2 = hashmap_elem_data;
-
-    return (*elem1 == IPs[*elem2].IP);
+    return ((elem1->IP == elem2->IP) && (elem1->port == elem2->port));
 }
 
 static uint16_t checksum(char *buf, uint32_t size)
@@ -199,15 +195,13 @@ void *read_raw(__attribute__((unused)) void *arg)
         memset(&read_header, 0, sizeof(struct pcap_pkthdr));
 
         const u_char *read_data;
-
         read_data = pcap_next(handle, &read_header);
-
-        if (read_header.len < (int32_t)(sizeof(struct ethhdr) + sizeof(struct iphdr))) {
+        if (read_header.len <
+            (int32_t)(sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr))) {
             continue;
         }
 
         struct ethhdr *eth_h_read = (struct ethhdr *)read_data;
-
         if (eth_h_read->h_proto != htons(ETH_P_IP)) {
             continue;
         }
@@ -218,22 +212,29 @@ void *read_raw(__attribute__((unused)) void *arg)
         }
 
         struct tcphdr *tcph_read = (struct tcphdr *)((char *)iph_read + sizeof(*iph_read));
+        if (tcph_read->source != htons(PORT_TLS)) {
+            continue;
+        }
 
-        uint32_t res_elem;
+        conn_data_t find_elem;
+        find_elem.IP = iph_read->saddr;
+        find_elem.port = tcph_read->dest;
+
+        conn_data_t res_elem;
+
         int32_t find_res;
-        find_res = array_hashmap_find_elem(ip_map_struct, &(iph_read->saddr), &res_elem);
+        find_res = array_hashmap_find_elem(ip_map_struct, &find_elem, &res_elem);
         if (find_res != array_hashmap_elem_finded) {
             continue;
         }
 
-        if (IPs[res_elem].status == 2) {
+        if (res_elem.status == TLS_SENDED) {
             if (ntohs(iph_read->tot_len) == 47) {
                 char *tls = (char *)tcph_read + sizeof(*tcph_read);
                 if ((tls[0] == 0x15) && (tls[1] == 0x3)) {
                     readed++;
-                    //IPs[res_elem].status = 0;
 
-                    domains[IPs[res_elem].domain].status++;
+                    res_elem.domain->status++;
 
                     /*struct iphdr *iph_send = (struct iphdr *)write_data_ack;
                     iph_send->version = 4;
@@ -265,10 +266,9 @@ void *read_raw(__attribute__((unused)) void *arg)
             }
         }
 
-        if (IPs[res_elem].status == 1 && keep_sending) {
+        if ((res_elem.status == SYN_SENDED) && keep_sending) {
             if ((tcph_read->syn == 1) && (tcph_read->ack == 1)) {
                 sended++;
-                IPs[res_elem].status = 2;
 
                 {
                     const int32_t all_size_ack =
@@ -321,21 +321,6 @@ void *read_raw(__attribute__((unused)) void *arg)
                     char write_data[PACKET_MAX_SIZE];
                     memset(write_data, 0, PACKET_MAX_SIZE);
 
-                    int32_t payload_size = 0;
-                    payload_size =
-                        tls_client_hello(write_data + all_size_ack, domains[domains_index].domain);
-                    IPs[res_elem].domain = domains_index;
-                    domains_index++;
-
-                    if (!(domains_index < domains_count)) {
-                        domains_index = 0;
-                        try_count++;
-                    }
-
-                    if (!(try_count < TRY_COUNT)) {
-                        keep_sending = 0;
-                    }
-
                     struct ethhdr *eth_h_send = (struct ethhdr *)write_data;
                     eth_h_send->h_proto = htons(ETH_P_IP);
                     memcpy(&eth_h_send->h_dest, gateway_mac, ETH_ALEN);
@@ -346,8 +331,7 @@ void *read_raw(__attribute__((unused)) void *arg)
                     iph_send->version = 4;
                     iph_send->ihl = sizeof(struct iphdr) / 4;
                     iph_send->tos = 0;
-                    iph_send->tot_len =
-                        htons(sizeof(struct iphdr) + sizeof(struct tcphdr) + payload_size);
+                    iph_send->tot_len = htons(sizeof(struct iphdr) + sizeof(struct tcphdr));
                     iph_send->id = 0;
                     iph_send->frag_off = htons(0x4000);
                     iph_send->ttl = 128;
@@ -370,6 +354,28 @@ void *read_raw(__attribute__((unused)) void *arg)
                     tcph_send->check = 0;
                     tcph_send->urg_ptr = 0;
 
+                    char *tls = (char *)tcph_read + sizeof(*tcph_read);
+                    int32_t payload_size = 0;
+                    payload_size = tls_client_hello(tls, domains[domains_index].domain);
+
+                    res_elem.domain = &domains[domains_index];
+                    res_elem.status = TLS_SENDED;
+
+                    array_hashmap_add_elem(ip_map_struct, &res_elem, NULL,
+                                           array_hashmap_save_new_func);
+
+                    domains_index++;
+                    if (!(domains_index < domains_count)) {
+                        domains_index = 0;
+                        try_count++;
+                    }
+                    if (!(try_count < TRY_COUNT)) {
+                        keep_sending = 0;
+                    }
+
+                    iph_send->tot_len =
+                        htons(sizeof(struct iphdr) + sizeof(struct tcphdr) + payload_size);
+
                     tcp_checksum(iph_send);
 
                     pcap_inject(handle, write_data, all_size_ack + payload_size);
@@ -388,27 +394,22 @@ void *send_raw(__attribute__((unused)) void *arg)
 
     char write_data[all_size];
 
-    uint16_t port = 0;
-
     while (keep_sending) {
-        int32_t current_ips_num = 0;
-        int32_t ret = 0;
-        do {
-            current_ips_num = rand() % IPs_count;
-            ret = 0;
-            if (IPs[current_ips_num].status != 0) {
-                ret = 1;
-            } else {
-                ret += in_subnet(IPs[current_ips_num].IP, "10.0.0.0/8");
-                ret += in_subnet(IPs[current_ips_num].IP, "172.16.0.0/12");
-                ret += in_subnet(IPs[current_ips_num].IP, "192.168.0.0/16");
-                ret += in_subnet(IPs[current_ips_num].IP, "100.64.0.0/10");
-                ret += in_subnet(IPs[current_ips_num].IP, "0.0.0.0/8");
-            }
-        } while (ret > 0);
+        conn_data_t add_elem;
 
-        if (port == 0) {
-            port = 1000;
+        while (true) {
+            add_elem.IP = IPs[rand() % IPs_count];
+            add_elem.port = rand();
+            add_elem.status = SYN_SENDED;
+            add_elem.time = time(NULL);
+            add_elem.domain = NULL;
+
+            array_hashmap_ret_t ret;
+            ret =
+                array_hashmap_add_elem(ip_map_struct, &add_elem, NULL, array_hashmap_save_old_func);
+            if (ret == array_hashmap_elem_added) {
+                break;
+            }
         }
 
         memset(write_data, 0, all_size);
@@ -429,12 +430,10 @@ void *send_raw(__attribute__((unused)) void *arg)
         iph->protocol = IPPROTO_TCP;
         iph->check = 0;
         iph->saddr = dev_ip;
-        iph->daddr = IPs[current_ips_num].IP;
-
-        IPs[current_ips_num].status = 1;
+        iph->daddr = add_elem.IP;
 
         struct tcphdr *tcph = (struct tcphdr *)((char *)iph + sizeof(*iph));
-        tcph->source = htons(port++);
+        tcph->source = add_elem.port;
         tcph->dest = htons(PORT_TLS);
         tcph->seq = rand();
         tcph->ack_seq = 0;
@@ -610,6 +609,18 @@ int32_t main(int32_t argc, char *argv[])
     }
     //Domains read
 
+    // HashMap init
+    {
+        ip_map_struct = array_hashmap_init(domains_count, 1.0, sizeof(conn_data_t));
+        if (ip_map_struct == NULL) {
+            errmsg("No free memory for ip_map_struct\n");
+        }
+
+        array_hashmap_set_func(ip_map_struct, ip_add_hash, ip_add_cmp, ip_add_hash, ip_add_cmp,
+                               ip_add_hash, ip_add_cmp);
+    }
+    // HashMap init
+
     //IPs read
     {
         FILE *IPs_fp = fopen(IPs_file_path, "r");
@@ -635,22 +646,12 @@ int32_t main(int32_t argc, char *argv[])
             }
         }
 
-        IPs = (conn_data_t *)malloc(IPs_count * sizeof(conn_data_t));
-        memset(IPs, 0, IPs_count * sizeof(conn_data_t));
-
-        ip_map_struct = array_hashmap_init(IPs_count, 1.0, sizeof(uint32_t));
-        if (ip_map_struct == NULL) {
-            errmsg("No free memory for ip_map_struct\n");
-        }
-
-        array_hashmap_set_func(ip_map_struct, ip_add_hash, ip_add_cmp, ip_find_hash, ip_find_cmp,
-                               ip_find_hash, ip_find_cmp);
+        IPs = (uint32_t *)malloc(IPs_count * sizeof(uint32_t));
+        memset(IPs, 0, IPs_count * sizeof(uint32_t));
 
         char *IP_start = IPs_file_data;
         for (int32_t i = 0; i < IPs_count; i++) {
-            IPs[i].IP = inet_addr(IP_start);
-
-            array_hashmap_add_elem(ip_map_struct, &i, NULL, NULL);
+            IPs[i] = inet_addr(IP_start);
 
             IP_start = strchr(IP_start, 0) + 1;
         }

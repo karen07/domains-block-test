@@ -27,6 +27,9 @@
 #define TRY_COUNT 24
 #define EXIT_WAIT_SEC 5
 
+#define SYN_SENDED 1
+#define TLS_SENDED 2
+
 #define STRLEN(s) ((sizeof(s) / sizeof(s[0])) - 1)
 #define ETH_STRLEN STRLEN("00:11:22:33:44:55")
 
@@ -68,19 +71,21 @@ typedef struct pseudo_header {
     uint16_t length;
 } __attribute__((packed)) pseudo_header_t;
 
-typedef struct conn_data {
-    uint32_t IP;
-    int32_t status;
-    int32_t domain;
-} conn_data_t;
-
-typedef struct domain_status {
-    char *domain;
-    int32_t status;
-} domain_status_t;
-
 typedef struct tcp_mss_opt {
     char type;
     char len;
     uint16_t mss;
 } __attribute__((packed)) tcp_mss_opt_t;
+
+typedef struct domain_status {
+    char *domain;
+    uint8_t status;
+} __attribute__((packed)) domain_status_t;
+
+typedef struct conn_data {
+    time_t time;
+    domain_status_t *domain;
+    uint32_t IP;
+    uint16_t port;
+    uint8_t status;
+} __attribute__((packed)) conn_data_t;
