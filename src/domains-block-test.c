@@ -322,8 +322,8 @@ void *read_raw(__attribute__((unused)) void *arg)
                     tcph_send->urg_ptr = 0;
 
                     char *tls = (char *)tcph_read + sizeof(*tcph_read);
-                    int32_t payload_size = 0;
-                    payload_size = tls_client_hello(tls, domains[domains_index].domain);
+                    int32_t tls_size = 0;
+                    tls_size = tls_client_hello(tls, domains[domains_index].domain);
 
                     res_elem.domain = &domains[domains_index];
                     res_elem.status = TLS_SENDED;
@@ -341,11 +341,11 @@ void *read_raw(__attribute__((unused)) void *arg)
                     }
 
                     iph_send->tot_len =
-                        htons(sizeof(struct iphdr) + sizeof(struct tcphdr) + payload_size);
+                        htons(sizeof(struct iphdr) + sizeof(struct tcphdr) + tls_size);
 
                     tcp_checksum(iph_send);
 
-                    pcap_inject(handle, write_data, ETH_IP_TCP_S + payload_size);
+                    pcap_inject(handle, write_data, ETH_IP_TCP_S + tls_size);
                 }
             }
         }
