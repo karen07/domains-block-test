@@ -321,9 +321,9 @@ void *read_raw(__attribute__((unused)) void *arg)
                     tcph_send->check = 0;
                     tcph_send->urg_ptr = 0;
 
-                    char *tls = (char *)tcph_read + sizeof(*tcph_read);
-                    int32_t tls_size = 0;
-                    tls_size = tls_client_hello(tls, domains[domains_index].domain);
+                    char *tls_send = (char *)tcph_send + sizeof(*tcph_send);
+                    int32_t tls_send_size = 0;
+                    tls_send_size = tls_client_hello(tls_send, domains[domains_index].domain);
 
                     res_elem.domain = &domains[domains_index];
                     res_elem.status = TLS_SENDED;
@@ -341,11 +341,11 @@ void *read_raw(__attribute__((unused)) void *arg)
                     }
 
                     iph_send->tot_len =
-                        htons(sizeof(struct iphdr) + sizeof(struct tcphdr) + tls_size);
+                        htons(sizeof(struct iphdr) + sizeof(struct tcphdr) + tls_send_size);
 
                     tcp_checksum(iph_send);
 
-                    pcap_inject(handle, write_data, ETH_IP_TCP_S + tls_size);
+                    pcap_inject(handle, write_data, ETH_IP_TCP_S + tls_send_size);
                 }
             }
         }
