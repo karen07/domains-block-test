@@ -30,6 +30,9 @@
 #define SYN_SENDED 1
 #define TLS_SENDED 2
 
+#define ETH_IP_TCP_S \
+    ((int32_t)(sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr)))
+
 #define STRLEN(s) ((sizeof(s) / sizeof(s[0])) - 1)
 #define ETH_STRLEN STRLEN("00:11:22:33:44:55")
 

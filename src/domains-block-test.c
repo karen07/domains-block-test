@@ -1,7 +1,7 @@
 #include "domains-block-test.h"
 
 uint32_t rps;
-double coeff = 1;
+volatile double coeff = 1;
 
 volatile int32_t keep_sending = 1;
 volatile int32_t keep_reading = 1;
@@ -85,37 +85,11 @@ int32_t tls_client_hello(char *send_data, char *sni)
     return sizeof(tls_data_t) + sni_len;
 }
 
-int32_t in_subnet(uint32_t ip, char *subnet_in)
-{
-    char subnet[100];
-    strcpy(subnet, subnet_in);
-
-    uint32_t ip_h = ntohl(ip);
-
-    uint32_t subnet_ip = 0;
-    uint32_t subnet_prefix = 0;
-
-    char *slash_ptr = strchr(subnet, '/');
-    if (slash_ptr) {
-        sscanf(slash_ptr + 1, "%u", &subnet_prefix);
-        *slash_ptr = 0;
-        if (strlen(subnet) < INET_ADDRSTRLEN) {
-            subnet_ip = inet_addr(subnet);
-        }
-        *slash_ptr = '/';
-    }
-
-    uint32_t netip = ntohl(subnet_ip);
-    uint32_t netmask = (0xFFFFFFFF << (32 - subnet_prefix) & 0xFFFFFFFF);
-
-    return ((netip & netmask) == (ip_h & netmask));
-}
-
 void print_help(void)
 {
     printf("Commands:\n"
            "  Required parameters:\n"
-           "    -f  \"/example.txt\"  Domains file path\n"
+           "    -d  \"/example.txt\"  Domains file path\n"
            "    -i  \"/example.txt\"  IPs file path\n"
            "    -n  \"test\"          Dev name\n"
            "    -r  \"xxx\"           Request per second\n");
@@ -196,8 +170,7 @@ void *read_raw(__attribute__((unused)) void *arg)
 
         const u_char *read_data;
         read_data = pcap_next(handle, &read_header);
-        if (read_header.len <
-            (int32_t)(sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr))) {
+        if (read_header.len < ETH_IP_TCP_S) {
             continue;
         }
 
@@ -271,11 +244,8 @@ void *read_raw(__attribute__((unused)) void *arg)
                 sended++;
 
                 {
-                    const int32_t all_size_ack =
-                        sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr);
-
-                    char write_data_ack[all_size_ack];
-                    memset(write_data_ack, 0, all_size_ack);
+                    char write_data_ack[ETH_IP_TCP_S];
+                    memset(write_data_ack, 0, ETH_IP_TCP_S);
 
                     struct ethhdr *eth_h_send = (struct ethhdr *)write_data_ack;
                     eth_h_send->h_proto = htons(ETH_P_IP);
@@ -311,13 +281,10 @@ void *read_raw(__attribute__((unused)) void *arg)
 
                     tcp_checksum(iph_send);
 
-                    pcap_inject(handle, write_data_ack, all_size_ack);
+                    pcap_inject(handle, write_data_ack, ETH_IP_TCP_S);
                 }
 
                 {
-                    const int32_t all_size_ack =
-                        sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr);
-
                     char write_data[PACKET_MAX_SIZE];
                     memset(write_data, 0, PACKET_MAX_SIZE);
 
@@ -378,7 +345,7 @@ void *read_raw(__attribute__((unused)) void *arg)
 
                     tcp_checksum(iph_send);
 
-                    pcap_inject(handle, write_data, all_size_ack + payload_size);
+                    pcap_inject(handle, write_data, ETH_IP_TCP_S + payload_size);
                 }
             }
         }
@@ -389,8 +356,7 @@ void *read_raw(__attribute__((unused)) void *arg)
 
 void *send_raw(__attribute__((unused)) void *arg)
 {
-    const int32_t all_size = sizeof(struct ethhdr) + sizeof(struct iphdr) + sizeof(struct tcphdr) +
-                             sizeof(tcp_mss_opt_t);
+    const int32_t all_size = ETH_IP_TCP_S + sizeof(tcp_mss_opt_t);
 
     char write_data[all_size];
 
@@ -506,7 +472,7 @@ int32_t main(int32_t argc, char *argv[])
     //Args
     {
         for (int32_t i = 1; i < argc; i++) {
-            if (!strcmp(argv[i], "-f")) {
+            if (!strcmp(argv[i], "-d")) {
                 if (i != argc - 1) {
                     printf("  Domains  \"%s\"\n", argv[i + 1]);
                     if (strlen(argv[i + 1]) < PATH_MAX) {
