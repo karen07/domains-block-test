@@ -210,6 +210,8 @@ void *read_raw(__attribute__((unused)) void *arg)
 
                     res_elem.domain->status++;
 
+                    array_hashmap_del_elem(ip_map_struct, &res_elem, NULL);
+
                     /*struct iphdr *iph_send = (struct iphdr *)write_data_ack;
                     iph_send->version = 4;
                     iph_send->ihl = sizeof(struct iphdr) / 4;
@@ -578,7 +580,7 @@ int32_t main(int32_t argc, char *argv[])
 
     // HashMap init
     {
-        ip_map_struct = array_hashmap_init(domains_count, 1.0, sizeof(conn_data_t));
+        ip_map_struct = array_hashmap_init(domains_count * TRY_COUNT, 1.0, sizeof(conn_data_t));
         if (ip_map_struct == NULL) {
             errmsg("No free memory for ip_map_struct\n");
         }
