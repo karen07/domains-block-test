@@ -422,7 +422,10 @@ void *send_raw(__attribute__((unused)) void *arg)
         pcap_inject(handle, write_data, all_size);
         syn_sended++;
 
-        usleep(1000000 / rps / coeff);
+        int32_t time_test = 1;
+        for (int32_t i = 0; i < 1000000 / rps / coeff * 50; i++) {
+            time_test *= 3;
+        }
     }
 
     return NULL;
@@ -443,6 +446,19 @@ static void eth_bin2str(unsigned char *src, char *dst)
 {
     sprintf(dst, "%02x:%02x:%02x:%02x:%02x:%02x", (unsigned int)src[0], (unsigned int)src[1],
             (unsigned int)src[2], (unsigned int)src[3], (unsigned int)src[4], (unsigned int)src[5]);
+}
+
+volatile time_t now_for_del;
+
+array_hashmap_bool domain_del_func(const void *del_elem_data)
+{
+    const conn_data_t *elem = del_elem_data;
+
+    if ((now_for_del - elem->time) > 5) {
+        return array_hashmap_del_by_func;
+    } else {
+        return array_hashmap_not_del_by_func;
+    }
 }
 
 int32_t main(int32_t argc, char *argv[])
@@ -580,7 +596,7 @@ int32_t main(int32_t argc, char *argv[])
 
     // HashMap init
     {
-        ip_map_struct = array_hashmap_init(domains_count * TRY_COUNT, 1.0, sizeof(conn_data_t));
+        ip_map_struct = array_hashmap_init(domains_count, 1.0, sizeof(conn_data_t));
         if (ip_map_struct == NULL) {
             errmsg("No free memory for ip_map_struct\n");
         }
@@ -799,11 +815,14 @@ int32_t main(int32_t argc, char *argv[])
             syn_sended_old = syn_sended;
             tls_sended_old = tls_sended;
             tls_error_readed_old = tls_error_readed;
+
+            now_for_del = time(NULL);
+            array_hashmap_del_elem_by_func(ip_map_struct, domain_del_func);
         }
 
         keep_reading = 0;
 
-        sleep(5);
+        sleep(1);
     }
     //Stat
 
