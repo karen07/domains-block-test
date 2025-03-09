@@ -6,8 +6,9 @@ volatile double coeff = 1;
 volatile int32_t keep_sending = 1;
 volatile int32_t keep_reading = 1;
 
-volatile int32_t sended;
-volatile int32_t readed;
+volatile int32_t syn_sended;
+volatile int32_t tls_sended;
+volatile int32_t tls_error_readed;
 
 pcap_t *handle;
 
@@ -205,7 +206,7 @@ void *read_raw(__attribute__((unused)) void *arg)
             if (ntohs(iph_read->tot_len) == 47) {
                 char *tls = (char *)tcph_read + sizeof(*tcph_read);
                 if ((tls[0] == 0x15) && (tls[1] == 0x3)) {
-                    readed++;
+                    tls_error_readed++;
 
                     res_elem.domain->status++;
 
@@ -241,8 +242,6 @@ void *read_raw(__attribute__((unused)) void *arg)
 
         if ((res_elem.status == SYN_SENDED) && keep_sending) {
             if ((tcph_read->syn == 1) && (tcph_read->ack == 1)) {
-                sended++;
-
                 {
                     char write_data_ack[ETH_IP_TCP_S];
                     memset(write_data_ack, 0, ETH_IP_TCP_S);
@@ -346,6 +345,7 @@ void *read_raw(__attribute__((unused)) void *arg)
                     tcp_checksum(iph_send);
 
                     pcap_inject(handle, write_data, ETH_IP_TCP_S + tls_send_size);
+                    tls_sended++;
                 }
             }
         }
@@ -418,6 +418,7 @@ void *send_raw(__attribute__((unused)) void *arg)
         tcp_checksum(iph);
 
         pcap_inject(handle, write_data, all_size);
+        syn_sended++;
 
         usleep(1000000 / rps / coeff);
     }
@@ -763,12 +764,12 @@ int32_t main(int32_t argc, char *argv[])
 
     //Stat
     {
-        int32_t sended_old = 0;
-        int32_t readed_old = 0;
+        int32_t syn_sended_old = 0;
+        int32_t tls_sended_old = 0;
+        int32_t tls_error_readed_old = 0;
 
         int32_t exit_wait = 0;
 
-        printf("Send_RPS Read_RPS Sended Readed\n");
         while (true) {
             sleep(1);
 
@@ -777,10 +778,11 @@ int32_t main(int32_t argc, char *argv[])
             printf("\n%d %02d.%02d.%04d %02d:%02d:%02d\n", try_count, tm_struct->tm_mday,
                    tm_struct->tm_mon + 1, tm_struct->tm_year + 1900, tm_struct->tm_hour,
                    tm_struct->tm_min, tm_struct->tm_sec);
-            printf("%08d %08d %06d %06d\n", sended - sended_old, readed - readed_old, sended,
-                   readed);
+            printf("%06d %06d %06d\n", syn_sended - syn_sended_old, tls_sended - tls_sended_old,
+                   tls_error_readed - tls_error_readed_old);
+            printf("%08d %08d %08d\n", syn_sended, tls_sended, tls_error_readed);
 
-            if ((readed - readed_old) < 100) {
+            if ((tls_error_readed - tls_error_readed_old) < 100) {
                 exit_wait++;
             } else {
                 exit_wait = 0;
@@ -790,10 +792,11 @@ int32_t main(int32_t argc, char *argv[])
                 break;
             }
 
-            coeff *= (1.0 * rps) / (sended - sended_old);
+            coeff *= (1.0 * rps) / (tls_sended - tls_sended_old);
 
-            sended_old = sended;
-            readed_old = readed;
+            syn_sended_old = syn_sended;
+            tls_sended_old = tls_sended;
+            tls_error_readed_old = tls_error_readed;
         }
 
         keep_reading = 0;
