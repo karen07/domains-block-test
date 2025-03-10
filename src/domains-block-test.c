@@ -210,7 +210,11 @@ void *read_raw(__attribute__((unused)) void *arg)
 
                     res_elem.domain->status++;
 
-                    array_hashmap_del_elem(ip_map_struct, &res_elem, NULL);
+                    int32_t array_hashmap_ret;
+                    array_hashmap_ret = array_hashmap_del_elem(ip_map_struct, &res_elem, NULL);
+                    if (array_hashmap_ret != array_hashmap_elem_deled) {
+                        errmsg("array_hashmap_elem_not_deled\n");
+                    }
 
                     /*struct iphdr *iph_send = (struct iphdr *)write_data_ack;
                     iph_send->version = 4;
@@ -328,9 +332,14 @@ void *read_raw(__attribute__((unused)) void *arg)
 
                     res_elem.domain = &domains[domains_index];
                     res_elem.status = TLS_SENDED;
+                    res_elem.time = time(NULL);
 
-                    array_hashmap_add_elem(ip_map_struct, &res_elem, NULL,
-                                           array_hashmap_save_new_func);
+                    int32_t array_hashmap_ret;
+                    array_hashmap_ret = array_hashmap_add_elem(ip_map_struct, &res_elem, NULL,
+                                                               array_hashmap_save_new_func);
+                    if (array_hashmap_ret != array_hashmap_elem_already_in) {
+                        errmsg("array_hashmap_elem_not_already_in\n");
+                    }
 
                     domains_index++;
                     if (!(domains_index < domains_count)) {
@@ -377,6 +386,9 @@ void *send_raw(__attribute__((unused)) void *arg)
                 array_hashmap_add_elem(ip_map_struct, &add_elem, NULL, array_hashmap_save_old_func);
             if (ret == array_hashmap_elem_added) {
                 break;
+            }
+            if (ret == array_hashmap_full) {
+                errmsg("array_hashmap_full\n");
             }
         }
 
@@ -454,7 +466,7 @@ array_hashmap_bool domain_del_func(const void *del_elem_data)
 {
     const conn_data_t *elem = del_elem_data;
 
-    if ((now_for_del - elem->time) > 5) {
+    if ((now_for_del - elem->time) > TCP_CONN_LIVETIME) {
         return array_hashmap_del_by_func;
     } else {
         return array_hashmap_not_del_by_func;
@@ -596,7 +608,7 @@ int32_t main(int32_t argc, char *argv[])
 
     // HashMap init
     {
-        ip_map_struct = array_hashmap_init(domains_count, 1.0, sizeof(conn_data_t));
+        ip_map_struct = array_hashmap_init(rps * 10, 1.0, sizeof(conn_data_t));
         if (ip_map_struct == NULL) {
             errmsg("No free memory for ip_map_struct\n");
         }
@@ -800,7 +812,7 @@ int32_t main(int32_t argc, char *argv[])
                    tls_error_readed - tls_error_readed_old);
             printf("%08d %08d %08d\n", syn_sended, tls_sended, tls_error_readed);
 
-            if ((tls_error_readed - tls_error_readed_old) < 100) {
+            if ((tls_error_readed - tls_error_readed_old) < EXIT_WAIT_DIFF) {
                 exit_wait++;
             } else {
                 exit_wait = 0;
@@ -834,7 +846,7 @@ int32_t main(int32_t argc, char *argv[])
         }
 
         for (int32_t i = 0; i < domains_count; i++) {
-            if (domains[i].status <= TRY_COUNT / 3) {
+            if (domains[i].status < TRY_COUNT / 6) {
                 fprintf(blocked_fp, "%d %s\n", domains[i].status, domains[i].domain);
             }
         }

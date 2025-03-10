@@ -24,8 +24,10 @@
 
 #define PORT_TLS 443
 #define PACKET_MAX_SIZE 1500
-#define TRY_COUNT 24
+#define TRY_COUNT 30
 #define EXIT_WAIT_SEC 5
+#define TCP_CONN_LIVETIME 5
+#define EXIT_WAIT_DIFF 10
 
 #define SYN_SENDED 1
 #define TLS_SENDED 2
