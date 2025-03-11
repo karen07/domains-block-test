@@ -91,8 +91,8 @@ void print_help(void)
 {
     printf("Commands:\n"
            "  Required parameters:\n"
-           "    -d  \"/example.txt\"  Domains file path\n"
-           "    -i  \"/example.txt\"  IPs file path\n"
+           "    -d  \"/test.txt\"  Domains file path\n"
+           "    -i  \"/test.txt\"  IPs file path\n"
            "    -n  \"test\"          Dev name\n"
            "    -r  \"xxx\"           Request per second\n");
 }

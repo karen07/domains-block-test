@@ -4,6 +4,6 @@ Domains-block-test sends fake TLS ClientHello to IPs from ips_file, SNI takes it
 ```sh
 Commands:
   Required parameters:
-    -domains_file /example.txt    Domains file path
-    -ips_file /example.txt        IPs file path
+    -domains_file /test.txt    Domains file path
+    -ips_file /test.txt        IPs file path
 ```
