@@ -1,6 +1,7 @@
 #include "domains-block-test.h"
 
 uint32_t rps;
+double one_cycle_ns;
 volatile double coeff = 1;
 
 volatile int32_t keep_sending = 1;
@@ -434,9 +435,9 @@ void *send_raw(__attribute__((unused)) void *arg)
         pcap_inject(handle, write_data, all_size);
         syn_sended++;
 
-        int32_t time_test = 1;
-        for (int32_t i = 0; i < 1000000 / rps / coeff * 50; i++) {
-            time_test *= 3;
+        volatile double time_test = 1.0;
+        for (int32_t i = 0; i < 1000000000.0 / rps / one_cycle_ns / coeff; i++) {
+            time_test *= 3.0;
         }
     }
 
@@ -490,6 +491,22 @@ int32_t main(int32_t argc, char *argv[])
     }
 
     printf("Launch parameters:\n");
+
+    {
+        struct timeval now_timeval_start;
+        gettimeofday(&now_timeval_start, NULL);
+        volatile double time_test = 1.0;
+        for (int32_t j = 0; j < 1000; j++) {
+            for (int32_t i = 0; i < 1000; i++) {
+                time_test *= 3.0;
+            }
+        }
+        struct timeval now_timeval_end;
+        gettimeofday(&now_timeval_end, NULL);
+        uint64_t now_us_start = now_timeval_start.tv_sec * 1000000 + now_timeval_start.tv_usec;
+        uint64_t now_us_end = now_timeval_end.tv_sec * 1000000 + now_timeval_end.tv_usec;
+        one_cycle_ns = ((now_us_end - now_us_start) * 1000.0) / 1000.0 / 1000.0;
+    }
 
     char domains_file_path[PATH_MAX];
     memset(domains_file_path, 0, PATH_MAX);
@@ -800,6 +817,11 @@ int32_t main(int32_t argc, char *argv[])
 
         int32_t exit_wait = 0;
 
+        struct timeval now_timeval_start;
+        struct timeval now_timeval_end;
+
+        memset(&now_timeval_start, 0, sizeof(now_timeval_start));
+
         while (true) {
             sleep(1);
 
@@ -822,7 +844,18 @@ int32_t main(int32_t argc, char *argv[])
                 break;
             }
 
-            coeff *= (1.0 * rps) / (tls_sended - tls_sended_old);
+            gettimeofday(&now_timeval_end, NULL);
+
+            if (now_timeval_start.tv_sec != 0) {
+                uint64_t now_us_start =
+                    now_timeval_start.tv_sec * 1000000 + now_timeval_start.tv_usec;
+                uint64_t now_us_end = now_timeval_end.tv_sec * 1000000 + now_timeval_end.tv_usec;
+                double real_rps =
+                    (tls_sended - tls_sended_old) / ((now_us_end - now_us_start) / 1000000.0);
+                coeff *= rps / real_rps;
+            }
+
+            gettimeofday(&now_timeval_start, NULL);
 
             syn_sended_old = syn_sended;
             tls_sended_old = tls_sended;
