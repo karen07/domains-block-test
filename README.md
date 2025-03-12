@@ -6,6 +6,6 @@ Commands:
   Required parameters:
     -d  "/test.txt"  Domains file path
     -i  "/test.txt"  IPs file path
-    -n  "test"          Dev name
-    -r  "xxx"           Request per second
+    -n  "test"       Dev name
+    -r  "xxx"        Request per second
 ```
