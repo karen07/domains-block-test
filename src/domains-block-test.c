@@ -93,8 +93,8 @@ void print_help(void)
            "  Required parameters:\n"
            "    -d  \"/test.txt\"  Domains file path\n"
            "    -i  \"/test.txt\"  IPs file path\n"
-           "    -n  \"test\"          Dev name\n"
-           "    -r  \"xxx\"           Request per second\n");
+           "    -n  \"test\"       Dev name\n"
+           "    -r  \"xxx\"        Request per second\n");
 }
 
 uint32_t djb33_hash_len(const char *s, size_t len)
