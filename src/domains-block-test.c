@@ -830,9 +830,9 @@ int32_t main(int32_t argc, char *argv[])
             printf("\n%d %02d.%02d.%04d %02d:%02d:%02d\n", try_count, tm_struct->tm_mday,
                    tm_struct->tm_mon + 1, tm_struct->tm_year + 1900, tm_struct->tm_hour,
                    tm_struct->tm_min, tm_struct->tm_sec);
-            printf("%08d %08d %08d\n", syn_sended - syn_sended_old, tls_sended - tls_sended_old,
+            printf("%8d %8d %8d\n", syn_sended - syn_sended_old, tls_sended - tls_sended_old,
                    tls_error_readed - tls_error_readed_old);
-            printf("%08d %08d %08d\n", syn_sended, tls_sended, tls_error_readed);
+            printf("%8d %8d %8d\n", syn_sended, tls_sended, tls_error_readed);
 
             if ((tls_error_readed - tls_error_readed_old) < EXIT_WAIT_DIFF) {
                 exit_wait++;
