@@ -822,17 +822,43 @@ int32_t main(int32_t argc, char *argv[])
 
         memset(&now_timeval_start, 0, sizeof(now_timeval_start));
 
+        time_t now = time(NULL);
+        struct tm *tm_struct = localtime(&now);
+        printf("\nStart time %02d.%02d.%04d %02d:%02d:%02d\n\n", tm_struct->tm_mday,
+               tm_struct->tm_mon + 1, tm_struct->tm_year + 1900, tm_struct->tm_hour,
+               tm_struct->tm_min, tm_struct->tm_sec);
+
+        char print_format[100];
+        char *print_data[100];
+        print_data[0] = "Send_SYN_RPS;";
+        print_data[1] = " Send_TLS_RPS;";
+        print_data[2] = " Read_TLS_RPS;";
+        print_data[3] = "   Sended_SYN;";
+        print_data[4] = "   Sended_TLS;";
+        print_data[5] = "   Readed_TLS;";
+
+        for (int32_t i = 0; i < 5; i++) {
+            printf("%s", print_data[i]);
+        }
+        printf("\n");
+
         while (true) {
             sleep(1);
 
-            time_t now = time(NULL);
-            struct tm *tm_struct = localtime(&now);
-            printf("\n%d %02d.%02d.%04d %02d:%02d:%02d\n", try_count, tm_struct->tm_mday,
-                   tm_struct->tm_mon + 1, tm_struct->tm_year + 1900, tm_struct->tm_hour,
-                   tm_struct->tm_min, tm_struct->tm_sec);
-            printf("%8d %8d %8d\n", syn_sended - syn_sended_old, tls_sended - tls_sended_old,
-                   tls_error_readed - tls_error_readed_old);
-            printf("%8d %8d %8d\n", syn_sended, tls_sended, tls_error_readed);
+            sprintf(print_format, "%%%dd;", (int32_t)(strlen(print_data[0]) - 1));
+            printf(print_format, syn_sended - syn_sended_old);
+            sprintf(print_format, "%%%dd;", (int32_t)(strlen(print_data[1]) - 1));
+            printf(print_format, tls_sended - tls_sended_old);
+            sprintf(print_format, "%%%dd;", (int32_t)(strlen(print_data[2]) - 1));
+            printf(print_format, tls_error_readed - tls_error_readed_old);
+            sprintf(print_format, "%%%dd;", (int32_t)(strlen(print_data[3]) - 1));
+            printf(print_format, syn_sended);
+            sprintf(print_format, "%%%dd;", (int32_t)(strlen(print_data[4]) - 1));
+            printf(print_format, tls_sended);
+            sprintf(print_format, "%%%dd;", (int32_t)(strlen(print_data[5]) - 1));
+            printf(print_format, tls_error_readed);
+            printf("\n");
+            fflush(stdout);
 
             if ((tls_error_readed - tls_error_readed_old) < EXIT_WAIT_DIFF) {
                 exit_wait++;
@@ -868,6 +894,13 @@ int32_t main(int32_t argc, char *argv[])
         keep_reading = 0;
 
         sleep(1);
+
+        now = time(NULL);
+        tm_struct = localtime(&now);
+        printf("\nEnd time %02d.%02d.%04d %02d:%02d:%02d\n", tm_struct->tm_mday,
+               tm_struct->tm_mon + 1, tm_struct->tm_year + 1900, tm_struct->tm_hour,
+               tm_struct->tm_min, tm_struct->tm_sec);
+        fflush(stdout);
     }
     //Stat
 
