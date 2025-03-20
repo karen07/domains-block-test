@@ -517,9 +517,9 @@ int32_t main(int32_t argc, char *argv[])
     char dev_name[IFNAMSIZ];
     memset(dev_name, 0, IFNAMSIZ);
 
-    printf("Launch parameters:\n");
     //Args
     {
+        printf("Launch parameters:\n");
         for (int32_t i = 1; i < argc; i++) {
             if (!strcmp(argv[i], "-d")) {
                 if (i != argc - 1) {
