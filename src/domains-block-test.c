@@ -29,6 +29,8 @@ uint32_t *IPs = NULL;
 
 int32_t try_count = 0;
 
+volatile time_t now_for_del;
+
 void errmsg(const char *format, ...)
 {
     va_list args;
@@ -85,16 +87,6 @@ int32_t tls_client_hello(char *send_data, char *sni)
     strcpy(send_data + sizeof(tls_data_t), sni);
 
     return sizeof(tls_data_t) + sni_len;
-}
-
-void print_help(void)
-{
-    printf("Commands:\n"
-           "  Required parameters:\n"
-           "    -d  \"/test.txt\"  Domains file path\n"
-           "    -i  \"/test.txt\"  IPs file path\n"
-           "    -n  \"test\"       Dev name\n"
-           "    -r  \"xxx\"        Request per second\n");
 }
 
 uint32_t djb33_hash_len(const char *s, size_t len)
@@ -444,24 +436,11 @@ void *send_raw(__attribute__((unused)) void *arg)
     return NULL;
 }
 
-static void main_catch_function(int32_t signo)
-{
-    if (signo == SIGINT) {
-        errmsg("SIGINT catched main\n");
-    } else if (signo == SIGSEGV) {
-        errmsg("SIGSEGV catched main\n");
-    } else if (signo == SIGTERM) {
-        errmsg("SIGTERM catched main\n");
-    }
-}
-
 static void eth_bin2str(unsigned char *src, char *dst)
 {
     sprintf(dst, "%02x:%02x:%02x:%02x:%02x:%02x", (unsigned int)src[0], (unsigned int)src[1],
             (unsigned int)src[2], (unsigned int)src[3], (unsigned int)src[4], (unsigned int)src[5]);
 }
-
-volatile time_t now_for_del;
 
 array_hashmap_bool domain_del_func(const void *del_elem_data)
 {
@@ -471,6 +450,27 @@ array_hashmap_bool domain_del_func(const void *del_elem_data)
         return array_hashmap_del_by_func;
     } else {
         return array_hashmap_not_del_by_func;
+    }
+}
+
+void print_help(void)
+{
+    printf("Commands:\n"
+           "  Required parameters:\n"
+           "    -d  \"/test.txt\"  Domains file path\n"
+           "    -i  \"/test.txt\"  IPs file path\n"
+           "    -n  \"test\"       Dev name\n"
+           "    -r  \"xxx\"        Request per second\n");
+}
+
+static void main_catch_function(int32_t signo)
+{
+    if (signo == SIGINT) {
+        errmsg("SIGINT catched main\n");
+    } else if (signo == SIGSEGV) {
+        errmsg("SIGSEGV catched main\n");
+    } else if (signo == SIGTERM) {
+        errmsg("SIGTERM catched main\n");
     }
 }
 
