@@ -818,14 +818,15 @@ int32_t main(int32_t argc, char *argv[])
 
         char print_format[100];
         char *print_data[100];
-        print_data[0] = "Send_SYN_RPS;";
-        print_data[1] = " Send_TLS_RPS;";
-        print_data[2] = " Read_TLS_RPS;";
-        print_data[3] = "   Sended_SYN;";
-        print_data[4] = "   Sended_TLS;";
-        print_data[5] = "   Readed_TLS;";
+        print_data[0] = "Try;";
+        print_data[1] = " Send_SYN_RPS;";
+        print_data[2] = " Send_TLS_RPS;";
+        print_data[3] = " Read_TLS_RPS;";
+        print_data[4] = "   Sended_SYN;";
+        print_data[5] = "   Sended_TLS;";
+        print_data[6] = "   Readed_TLS;";
 
-        for (int32_t i = 0; i < 6; i++) {
+        for (int32_t i = 0; i < 7; i++) {
             printf("%s", print_data[i]);
         }
         printf("\n");
@@ -834,16 +835,18 @@ int32_t main(int32_t argc, char *argv[])
             sleep(1);
 
             sprintf(print_format, "%%%dd;", (int32_t)(strlen(print_data[0]) - 1));
-            printf(print_format, syn_sended - syn_sended_old);
+            printf(print_format, try_count);
             sprintf(print_format, "%%%dd;", (int32_t)(strlen(print_data[1]) - 1));
-            printf(print_format, tls_sended - tls_sended_old);
+            printf(print_format, syn_sended - syn_sended_old);
             sprintf(print_format, "%%%dd;", (int32_t)(strlen(print_data[2]) - 1));
-            printf(print_format, tls_error_readed - tls_error_readed_old);
+            printf(print_format, tls_sended - tls_sended_old);
             sprintf(print_format, "%%%dd;", (int32_t)(strlen(print_data[3]) - 1));
-            printf(print_format, syn_sended);
+            printf(print_format, tls_error_readed - tls_error_readed_old);
             sprintf(print_format, "%%%dd;", (int32_t)(strlen(print_data[4]) - 1));
-            printf(print_format, tls_sended);
+            printf(print_format, syn_sended);
             sprintf(print_format, "%%%dd;", (int32_t)(strlen(print_data[5]) - 1));
+            printf(print_format, tls_sended);
+            sprintf(print_format, "%%%dd;", (int32_t)(strlen(print_data[6]) - 1));
             printf(print_format, tls_error_readed);
             printf("\n");
             fflush(stdout);
