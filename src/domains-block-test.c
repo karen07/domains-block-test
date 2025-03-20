@@ -476,7 +476,7 @@ array_hashmap_bool domain_del_func(const void *del_elem_data)
 
 int32_t main(int32_t argc, char *argv[])
 {
-    printf("Domains block test started\n");
+    printf("Domains block test started\n\n");
 
     if (signal(SIGINT, main_catch_function) == SIG_ERR) {
         errmsg("Can't set SIGINT signal handler main\n");
@@ -490,8 +490,7 @@ int32_t main(int32_t argc, char *argv[])
         errmsg("Can't set SIGTERM signal handler main\n");
     }
 
-    printf("Launch parameters:\n");
-
+    //Timer based on for
     {
         struct timeval now_timeval_start;
         gettimeofday(&now_timeval_start, NULL);
@@ -507,6 +506,7 @@ int32_t main(int32_t argc, char *argv[])
         uint64_t now_us_end = now_timeval_end.tv_sec * 1000000 + now_timeval_end.tv_usec;
         one_cycle_ns = ((now_us_end - now_us_start) * 1000.0) / 1000.0 / 1000.0;
     }
+    //Timer based on for
 
     char domains_file_path[PATH_MAX];
     memset(domains_file_path, 0, PATH_MAX);
@@ -517,6 +517,7 @@ int32_t main(int32_t argc, char *argv[])
     char dev_name[IFNAMSIZ];
     memset(dev_name, 0, IFNAMSIZ);
 
+    printf("Launch parameters:\n");
     //Args
     {
         for (int32_t i = 1; i < argc; i++) {
@@ -581,6 +582,8 @@ int32_t main(int32_t argc, char *argv[])
         }
     }
     //Args
+
+    printf("\n");
 
     //Domains read
     {
@@ -674,7 +677,7 @@ int32_t main(int32_t argc, char *argv[])
 
         fclose(IPs_fp);
 
-        printf("IPs count    : %d\n", IPs_count);
+        printf("IPs     count: %d\n", IPs_count);
     }
     //IPs read
 
@@ -743,21 +746,6 @@ int32_t main(int32_t argc, char *argv[])
             char dst[ETH_STRLEN + 1];
             eth_bin2str(eth_h->h_dest, dst);
 
-            struct iphdr *ip_h = (struct iphdr *)(packet + sizeof(struct ethhdr));
-
-            struct in_addr src_ip_s;
-            src_ip_s.s_addr = ip_h->saddr;
-
-            struct in_addr dst_ip_s;
-            dst_ip_s.s_addr = ip_h->daddr;
-
-            printf("\n");
-            printf("%s\n", src);
-            printf("%s\n", dst);
-            printf("%s\n", inet_ntoa(src_ip_s));
-            printf("%s\n", inet_ntoa(dst_ip_s));
-            printf("\n");
-
             if (memcmp(dev_mac, eth_h->h_source, ETH_ALEN)) {
                 memcpy(gateway_mac, eth_h->h_source, ETH_ALEN);
                 break;
@@ -775,15 +763,15 @@ int32_t main(int32_t argc, char *argv[])
     {
         char dev_src[ETH_STRLEN + 1];
         eth_bin2str(dev_mac, dev_src);
-        printf("dev_mac %s\n", dev_src);
+        printf("Dev       mac: %s\n", dev_src);
 
         char gateway_src[ETH_STRLEN + 1];
         eth_bin2str(gateway_mac, gateway_src);
-        printf("gateway_mac %s\n", gateway_src);
+        printf("Gateway   mac: %s\n", gateway_src);
 
         struct in_addr src_ip_s;
         src_ip_s.s_addr = dev_ip;
-        printf("dev_src_ip %s\n", inet_ntoa(src_ip_s));
+        printf("Dev        ip: %s\n", inet_ntoa(src_ip_s));
     }
     //Print mac and ip
 
@@ -837,7 +825,7 @@ int32_t main(int32_t argc, char *argv[])
         print_data[4] = "   Sended_TLS;";
         print_data[5] = "   Readed_TLS;";
 
-        for (int32_t i = 0; i < 5; i++) {
+        for (int32_t i = 0; i < 6; i++) {
             printf("%s", print_data[i]);
         }
         printf("\n");
