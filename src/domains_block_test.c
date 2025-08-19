@@ -1,4 +1,4 @@
-#include "domains-block-test.h"
+#include "domains_block_test.h"
 
 uint32_t rps;
 double one_cycle_ns;
