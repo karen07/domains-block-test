@@ -156,8 +156,10 @@ static void tcp_checksum(struct iphdr *iph)
     iph->check = checksum((char *)iph, iph->ihl << 2);
 }
 
-void *read_raw(__attribute__((unused)) void *arg)
+void *read_raw(void *arg)
 {
+    (void)arg;
+
     while (keep_reading) {
         struct pcap_pkthdr read_header;
         memset(&read_header, 0, sizeof(struct pcap_pkthdr));
@@ -358,8 +360,10 @@ void *read_raw(__attribute__((unused)) void *arg)
     return NULL;
 }
 
-void *send_raw(__attribute__((unused)) void *arg)
+void *send_raw(void *arg)
 {
+    (void)arg;
+
     const int32_t all_size = ETH_IP_TCP_S + sizeof(tcp_mss_opt_t);
 
     char write_data[all_size];
