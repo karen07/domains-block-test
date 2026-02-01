@@ -10,7 +10,7 @@
 #include <linux/tcp.h>
 #include <linux/udp.h>
 #include <pthread.h>
-#include <pcap.h>
+#include <pcap/pcap.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
