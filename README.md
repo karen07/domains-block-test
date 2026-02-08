@@ -1,5 +1,5 @@
 # Domains block test
-Domains-block-test sends fake TLS ClientHello to IPs from ip file, SNI takes it from domains file. If the response is that TLS is not correct, then the domain is not blocked, if there is no response a couple of times, that the domain is blocked.
+Domains-block-test sends a synthetic TLS ClientHello to IP addresses listed in an input file, using SNI values taken from a domains file. If the server responds with a TLS error, the domain is considered unblocked. If no response is received after several attempts, the domain is considered blocked.
 ## Usage
 ```sh
 Commands:
