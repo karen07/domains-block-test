@@ -11,6 +11,8 @@ volatile int32_t syn_sended;
 volatile int32_t tls_sended;
 volatile int32_t tls_error_readed;
 
+static volatile double time_test_sink;
+
 pcap_t *handle;
 
 unsigned char dev_mac[ETH_ALEN];
@@ -435,6 +437,7 @@ void *send_raw(void *arg)
         for (int32_t i = 0; i < 1000000000.0 / rps / one_cycle_ns / coeff; i++) {
             time_test *= 3.0;
         }
+        time_test_sink = time_test;
     }
 
     return NULL;
@@ -504,10 +507,15 @@ int32_t main(int32_t argc, char *argv[])
                 time_test *= 3.0;
             }
         }
+
+        time_test_sink = time_test;
+
         struct timeval now_timeval_end;
         gettimeofday(&now_timeval_end, NULL);
-        uint64_t now_us_start = now_timeval_start.tv_sec * 1000000 + now_timeval_start.tv_usec;
-        uint64_t now_us_end = now_timeval_end.tv_sec * 1000000 + now_timeval_end.tv_usec;
+
+        uint64_t now_us_start = now_timeval_start.tv_sec * 1000000ULL + now_timeval_start.tv_usec;
+        uint64_t now_us_end = now_timeval_end.tv_sec * 1000000ULL + now_timeval_end.tv_usec;
+
         one_cycle_ns = ((now_us_end - now_us_start) * 1000.0) / 1000.0 / 1000.0;
     }
     //Timer based on for
