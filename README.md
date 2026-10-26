@@ -1,14 +1,14 @@
 # Domains block test
 
-Domains block test is a low-level TLS/SNI probe that tests domain names against a list of target IPv4 addresses using synthetic TLS ClientHello packets.
-
-The program crafts TCP and TLS packets directly on a selected network interface, sends a ClientHello with the tested domain in SNI, and observes replies through libpcap. A matching TLS Alert increments the successful-response count; domains that receive too few such replies across the test attempts are written to `blocked.txt`.
-
-This is a specialized filtering diagnostic, not a general HTTPS reachability test. It does not perform a normal browser-style TLS session or validate HTTP responses, and it requires sufficient privileges for direct packet capture and injection.
+A low-level TLS/SNI probe that tests domains against selected IPv4 addresses. It crafts
+TLS ClientHello traffic, sends it directly through a network interface, and observes
+replies using libpcap.
 
 ## Описание
 
-Domains block test - низкоуровневая утилита TLS/SNI, которая проверяет доменные имена через список целевых IPv4 адресов с помощью синтетических пакетов TLS ClientHello.
+Низкоуровневая утилита для проверки доступности доменов через TLS/SNI на выбранных
+IPv4-адресах. Она формирует TLS ClientHello, отправляет пакеты непосредственно через сетевой
+интерфейс и отслеживает ответы с помощью libpcap.
 
 Программа самостоятельно формирует TCP и TLS пакеты на выбранном сетевом интерфейсе, отправляет ClientHello с проверяемым доменом в SNI и наблюдает ответы через libpcap. Подходящая запись TLS Alert увеличивает счетчик успешных ответов, а домены, для которых за серию попыток получено слишком мало таких ответов, записываются в `blocked.txt`.
 
